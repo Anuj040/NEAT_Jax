@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum, auto
+import numpy as np
+
+
+class NodeType(Enum):
+    INPUT = auto()
+    HIDDEN = auto()
+    OUTPUT = auto()
+    BIAS = auto()
+
+
+@dataclass
+class NodeGene:
+    id: int
+    type: NodeType
+
+
+@dataclass
+class ConnectionGene:
+    in_id: int
+    out_id: int
+    weight: float
+    enabled: bool
+    innovation: int
+
+
+@dataclass
+class Genome:
+    """NEAT genome: nodes + connections, feed-forward evaluation only."""
+    nodes: dict[int, NodeGene]
+    connections: list[ConnectionGene]
+
+    def _build_eval_order(self) -> list[int]:
+        """Return an evaluation order for non-input nodes.
+
+        Simple version: sort all HIDDEN + OUTPUT node IDs.
+        (DAG structure: only adding edges from lower -> higher ID.)
+        """
+        hidden_and_output = [
+            nid for nid, n in self.nodes.items()
+            if n.type in (NodeType.HIDDEN, NodeType.OUTPUT)
+        ]
+        return sorted(hidden_and_output)
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        """Compute network output for a single observation.
+
+        x: shape (num_inputs,)
+        returns: shape (num_outputs,)
+        """
+        # Assign input (and bias) values.
+        values: dict[int, float] = {}
+
+        input_ids = sorted(
+            nid for nid, n in self.nodes.items()
+            if n.type == NodeType.INPUT
+        )
+        assert x.shape[0] == len(input_ids), (
+            f"Expected {len(input_ids)} inputs, got {x.shape[0]}"
+        )
+
+        for nid, val in zip(input_ids, x):
+            values[nid] = float(val)
+
+        # Bias nodes (if any) always output 1.0
+        for nid, n in self.nodes.items():
+            if n.type == NodeType.BIAS:
+                values[nid] = 1.0
+
+        # Compute hidden and output nodes in order.
+        eval_order = self._build_eval_order()
+
+        for nid in eval_order:
+            incoming = [
+                c for c in self.connections
+                if c.enabled and c.out_id == nid
+            ]
+            s = 0.0
+            for c in incoming:
+                # Missing in_id value should not happen if DAG is respected.
+                s += values.get(c.in_id, 0.0) * c.weight
+
+            # Activation function: tanh
+            values[nid] = float(np.tanh(s))
+
+        # Collect outputs in sorted ID order.
+        output_ids = sorted(
+            nid for nid, n in self.nodes.items()
+            if n.type == NodeType.OUTPUT
+        )
+        outputs = np.array([values[nid] for nid in output_ids], dtype=np.float32)
+        return outputs
+
+
+def make_minimal_genome(obs_dim: int, act_dim: int) -> Genome:
+    """Create a minimal NEAT genome: inputs + bias fully connected to outputs.
+
+    No hidden nodes. This matches classic NEAT's 'start simple' strategy.
+    """
+    nodes: dict[int, NodeGene] = {}
+    node_id = 0
+
+    # Inputs
+    input_ids: list[int] = []
+    for _ in range(obs_dim):
+        node_id += 1
+        nodes[node_id] = NodeGene(id=node_id, type=NodeType.INPUT)
+        input_ids.append(node_id)
+
+    # Bias
+    node_id += 1
+    bias_id = node_id
+    nodes[bias_id] = NodeGene(id=bias_id, type=NodeType.BIAS)
+
+    # Outputs
+    output_ids: list[int] = []
+    for _ in range(act_dim):
+        node_id += 1
+        nodes[node_id] = NodeGene(id=node_id, type=NodeType.OUTPUT)
+        output_ids.append(node_id)
+
+    # Fully connect (inputs + bias) → outputs with random weights.
+    connections: list[ConnectionGene] = []
+    innovation = 0
+    for in_id in input_ids + [bias_id]:
+        for out_id in output_ids:
+            innovation += 1
+            connections.append(ConnectionGene(
+                in_id=in_id,
+                out_id=out_id,
+                weight=float(np.random.randn() * 0.5),
+                enabled=True,
+                innovation=innovation,
+            ))
+
+    return Genome(nodes=nodes, connections=connections)
