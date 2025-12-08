@@ -20,6 +20,78 @@ neat_policy_batched = jax.vmap(
     out_axes=0,
 )
 
+
+def rollout_batched(
+    params_batch: dict,     # dict of arrays with shape (B, ...)
+    episodes: int,
+    max_steps: int,
+    rng_seed: int | None = None,
+) -> jnp.ndarray:
+    """
+    Fully JAXed batched rollout for NEAT policies in SlimeVolley.
+
+    params_batch: params for P genomes, shape (P, ...)
+    episodes: number of episodes per genome (parallelized as env slots)
+    max_steps: time horizon
+    key: PRNG key
+
+    Returns:
+        fitnesses: (P,) average return per genome over episodes.
+    """
+    # Number of genomes
+    P = params_batch["n_nodes"].shape[0]
+    B = P * episodes  # total env slots
+
+    # Repeat params for episodes axis: shape (B, ...)
+    params_slots = {
+        k: jnp.repeat(v, repeats=episodes, axis=0)
+        for k, v in params_batch.items()
+    }
+    if rng_seed is None:
+        rng_seed = int(time.time() * 1e6) & 0xFFFFFFFF
+    key = random.PRNGKey(rng_seed)
+    env = SlimeVolley(test=False, max_steps=max_steps)
+    keys = random.split(key, num=B)
+    state = env.reset(keys)
+
+    def step_fn(carry, t):
+        state, returns, done_carry = carry  # done_carry: (B,) bool
+        target_dtype = state.game_state.action_right.dtype
+        # If done, we want to skip stepping those envs
+        obs = state.obs  # (B, obs_dim)
+
+        # Compute actions for all envs
+        actions = neat_policy_batched(params_slots, obs)  # (B, 3)
+
+        # Step env
+        next_state, reward, done = env.step(state, actions)
+        reward = jnp.squeeze(reward)  # (B,)
+        done = jnp.squeeze(done)      # (B,)
+
+        # Only accumulate reward if not already done
+        # (This allows env to keep stepping but we freeze returns per episode.)
+        active = ~done_carry
+        returns = returns + jnp.where(active, reward, 0.0)
+
+        # Once done, stay done
+        done_carry = jnp.logical_or(done_carry, done)
+        corrected_action_right = next_state.game_state.action_right.astype(target_dtype)
+        new_game_state = next_state.game_state.replace(action_right=corrected_action_right)
+        next_state = next_state.replace(game_state=new_game_state)
+        new_carry = (next_state, returns, done_carry)
+        return new_carry, None
+
+    B_bool = jnp.zeros((B,), dtype=bool)
+    init_returns = jnp.zeros((B,), dtype=jnp.float32)
+    (_, final_returns, _), _ = jax.lax.scan(
+        step_fn,
+        (state, init_returns, B_bool),
+        jnp.arange(max_steps),
+    )
+
+    returns_matrix = final_returns.reshape(P, episodes)  # (P, episodes)
+    return jnp.mean(returns_matrix, axis=1)
+
 def evaluate_genome_slime_evojax(
     genomes,
     episodes: int = 3,
@@ -28,7 +100,7 @@ def evaluate_genome_slime_evojax(
     pop_size: int | None = None,
 ) -> np.ndarray:
     """
-    Evaluate a single NEAT genome using EvoJAX's SlimeVolley task.
+    Evaluate all NEAT genomes in the batch using EvoJAX's SlimeVolley task.
 
     - Uses the built-in simple AI opponent (test=False).
     - Returns average episodic reward over `episodes`.
@@ -41,7 +113,6 @@ def evaluate_genome_slime_evojax(
 
     # Create EvoJAX task (train mode)
     env = SlimeVolley(test=False, max_steps=max_steps)
-
     total_return = np.zeros(pop_size, dtype=np.float32)
 
     keys = random.split(key, num=pop_size*episodes)
@@ -76,13 +147,20 @@ def evaluate_population_evojax(
     if base_seed is None:
         base_seed = int(time.time() * 1e6) & 0xFFFFFFFF
 
-    return evaluate_genome_slime_evojax(
-            genomes=(genomes_to_params_batch(genomes, OBS_DIM, ACT_DIM)),
-            episodes=episodes,
-            max_steps=max_steps,
-            rng_seed=base_seed,
-            pop_size=pop_size
-        )
+    # return evaluate_genome_slime_evojax(
+    #         genomes=(genomes_to_params_batch(genomes, OBS_DIM, ACT_DIM)),
+    #         episodes=episodes,
+    #         max_steps=max_steps,
+    #         rng_seed=base_seed,
+    #         pop_size=pop_size
+    #     )
+    fitnesses_jax = rollout_batched(
+        params_batch=genomes_to_params_batch(genomes, OBS_DIM, ACT_DIM),
+        episodes=episodes,
+        max_steps=max_steps,
+        rng_seed=base_seed,
+    )
+    return np.array(fitnesses_jax, dtype=np.float32)
 
 def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop_size: int = 20):
     hyparams = NeatHyperParams(
