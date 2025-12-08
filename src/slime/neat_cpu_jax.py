@@ -5,19 +5,19 @@ from src.jax_neat.convert import genome_to_jax
 from src.jax_neat.policy import jax_forward
 from src.neat_core.neat import Neat, NeatHyperParams
 from src.neat_core.genome import Genome
+from src.jax_neat.policy import JAXGenome
 
 try:
     import gym
 except:
     pass
 
-def slime_policy_jax(jg, obs_np: np.ndarray) -> np.ndarray:
+def slime_policy_jax(jg:JAXGenome, obs_np: np.ndarray) -> jnp.ndarray:
     """Wrapper used by gym loop."""
     obs = jnp.array(obs_np, dtype=jnp.float32)
     raw = jax_forward(jg, obs)  # (3,)
     # Binary actions (MultiBinary(3))
-    act = (raw > 0.0).astype(jnp.int32)
-    return np.array(act)  # back to numpy for slimevolleygym
+    return (raw > 0.0).astype(jnp.int32)
 
 
 def eval_genome_slime_jax(g:Genome, episodes:int=3, max_steps:int = 1000, render: bool=False) -> float:

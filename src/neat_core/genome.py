@@ -11,6 +11,12 @@ class NodeType(Enum):
     OUTPUT = auto()
     BIAS = auto()
 
+NODE_TYPE_MAP = {
+    NodeType.INPUT: 1,
+    NodeType.HIDDEN: 2,
+    NodeType.OUTPUT: 3,
+    NodeType.BIAS: 4,
+}
 
 @dataclass
 class NodeGene:

@@ -9,7 +9,7 @@ from evojax.task.slimevolley import SlimeVolley
 from src.jax_neat.convert import genome_to_jax
 from src.slime.neat_cpu_jax import slime_policy_jax
 from src.neat_core.neat import Neat, NeatHyperParams
-from src.jax_neat.policy import JAXGenome
+from src.neat_core.genome import Genome
 
 OBS_DIM = 12  # SlimeVolley state observation size (fixed)
 ACT_DIM = 3   # SlimeVolley action size (MultiBinary(3))
@@ -53,7 +53,7 @@ def evaluate_genome_slime_evojax(
         while not done and step < max_steps:
             # state.obs should be a numpy or JAX array of shape (OBS_DIM,)
             obs = np.array(state.obs, dtype=np.float32)
-            action = slime_policy_jax(jg, obs[0])  # numpy int32 (3,)
+            action = np.array(slime_policy_jax(jg, obs[0]))  # numpy int32 (3,)
             # SlimeVolley expects actions as numpy / jax arrays; both usually work.
             state, reward, done = env.step(state, jnp.expand_dims(action, 0))
             ep_return += float(reward[0])
@@ -93,7 +93,6 @@ def evaluate_population_evojax(
     return np.array(fitnesses, dtype=np.float32)
 
 def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop_size: int = 20):
-    obs_dim, act_dim = 12, 3
 
     hyparams = NeatHyperParams(
         pop_size=pop_size,
@@ -103,15 +102,15 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
         p_add_node=0.05,
     )
     neat = Neat(
-        obs_dim=obs_dim,
-        act_dim=act_dim,
+        obs_dim=OBS_DIM,
+        act_dim=ACT_DIM,
         hyp=hyparams,
         seed=42,
     )
 
     for gen in range(generations):
         genomes = neat.ask()  # list[Genome]
-        fitnesses = evaluate_population_evojax(genomes, episodes=episodes_per_genome, max_steps=10)#00)
+        fitnesses = evaluate_population_evojax(genomes, episodes=episodes_per_genome, max_steps=10)
 
         neat.tell(fitnesses)
 
@@ -124,15 +123,15 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
     # After training, you can test best genome with rendering if SlimeVolley supports it.
     best = neat.get_best()
     # Visuailize best genome
-    eval_with_render_evojax(best.genome, episodes=1, max_steps=1000)
+    eval_with_render_evojax(best.genome, episodes=1, max_steps=10)
 
-def eval_with_render_evojax(genome:JAXGenome, episodes: int = 1, max_steps:int = 1000) -> None:
+def eval_with_render_evojax(genome:Genome, episodes: int = 1, max_steps:int = 1000) -> None:
     jg = genome_to_jax(genome, obs_dim=OBS_DIM, act_dim=ACT_DIM)
     test_env = SlimeVolley(test=True, max_steps=max_steps)
 
     total_return = 0.0
     log_dir = './log/slimevolley'
-    rng_seed = int(time.time() * 1e6) & 0xFFFFFFFF
+    rng_seed = 0xFFFFFFFF
     key = random.PRNGKey(rng_seed)
     keys = random.split(key, num=episodes)
     ep_num = 0
@@ -161,8 +160,11 @@ def eval_with_render_evojax(genome:JAXGenome, episodes: int = 1, max_steps:int =
     print(f'GIF saved to {gif_file}.')
 
 if __name__ == "__main__":
+    import time
+    start = time.time()
     train_neat_on_slime(
-        generations=1, #5,
+        generations=5,
         episodes_per_genome=2,
-        pop_size=2,#10
+        pop_size=10,
         )
+    print(f"Total training time: {time.time() - start} seconds")

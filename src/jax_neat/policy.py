@@ -4,8 +4,9 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+from src.neat_core.genome import NodeType, NODE_TYPE_MAP
 
-
+ACT_DIM = 3 # The known output dimension for SlimeVolley
 @dataclass
 class JAXGenome:
     node_type: jnp.ndarray      # int32, shape (MAX_NODES,)
@@ -27,15 +28,19 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
     """
     # Values for all nodes, initialize with zeros.
     # Fill inputs, bias, then propagate hidden+output.
+    if isinstance(gen, dict):
+        from types import SimpleNamespace
+        gen = SimpleNamespace(**gen)
     values = jnp.zeros_like(gen.node_type, dtype=jnp.float32)
 
     # Set input node values.
     # Assume inputs are nodes [0 .. n_input-1]
-    values = values.at[:gen.n_input].set(obs)
+    values = jax.lax.dynamic_update_slice(values, obs, start_indices=(0,))
+
 
     # Set bias nodes (if any) to 1.0
     # Let's say bias nodes are type == 4
-    bias_mask = (gen.node_type == 4)
+    bias_mask = (gen.node_type == NODE_TYPE_MAP[NodeType.BIAS])
     values = jnp.where(bias_mask, 1.0, values)
 
     # Topological eval:
@@ -46,8 +51,8 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
         # Skip inputs and bias
         ntype = gen.node_type[node_id]
         is_input_or_bias = jnp.logical_or(
-            ntype == 1,  # INPUT
-            ntype == 4,  # BIAS
+            ntype ==  NODE_TYPE_MAP[NodeType.INPUT],
+            ntype ==  NODE_TYPE_MAP[NodeType.BIAS],
         )
         def skip(values):
             return values
@@ -86,9 +91,7 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
     # Collect outputs.
     # Assume outputs are the last n_output nodes: [n_nodes - n_output .. n_nodes)
     start = gen.n_nodes - gen.n_output
-    end = gen.n_nodes
-    out_vals = values[start:end]
-    return out_vals
+    return jax.lax.dynamic_slice(values, (start,), (ACT_DIM,))
 
 def jax_genome_flatten(jg):
     children = (
