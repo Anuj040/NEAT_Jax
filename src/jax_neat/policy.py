@@ -4,12 +4,14 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+import jax.lax as lax
 from src.neat_core.genome import NodeType, NODE_TYPE_MAP
 
 ACT_DIM = 3 # The known output dimension for SlimeVolley
 @dataclass
 class JAXGenome:
     node_type: jnp.ndarray      # int32, shape (MAX_NODES,)
+    node_activation: jnp.ndarray  # int32, shape (MAX_NODES,)
     conn_in: jnp.ndarray        # int32, shape (MAX_CONNS,)
     conn_out: jnp.ndarray       # int32, shape (MAX_CONNS,)
     conn_weight: jnp.ndarray    # float32, shape (MAX_CONNS,)
@@ -19,6 +21,31 @@ class JAXGenome:
     n_nodes: int
     n_conns: int
 
+
+# This function would be placed in your JAX policy file
+
+def jax_activate(z, act_id):
+    """JAX-compatible activation dispatcher using lax.switch."""
+    
+    # Define a list of activation functions (must be the same order as ACT_TYPE_MAP)
+    def identity(x): return x
+    
+    # Note: Tanh ID 1, ReLU ID 2, Sigmoid ID 3, Linear ID 4 (as per ACT_TYPE_MAP)
+    activation_funcs = [
+        lambda x: x,                      # ID 0 (unused/placeholder)
+        jnp.tanh,                         # ID 1: TANH
+        lambda x: jnp.maximum(0.0, x),    # ID 2: RELU
+        lambda x: 1.0 / (1.0 + jnp.exp(-x)), # ID 3: SIGMOID
+        identity                          # ID 4: LINEAR
+    ]
+
+    # lax.switch requires a 0-indexed integer. Since our IDs start at 1,
+    # and we use 0 as a placeholder, we can use the ID directly as the index.
+    return lax.switch(act_id, activation_funcs, z)
+
+# In your JAX forward pass loop:
+# current_activation_id = jax_genome.node_activation[node_idx]
+# values[node_idx] = jax_activate(sum_of_weights, current_activation_id)
 def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
     """Feed-forward a NEAT genome in JAX.
 
@@ -79,8 +106,10 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
             )
             s = jnp.sum(contrib)
 
-            # tanh activation
-            values = values.at[node_id].set(jnp.tanh(s))
+            # activation
+            act_id = gen.node_activation[node_id]
+            activated_s = jax_activate(s, act_id)
+            values = values.at[node_id].set(activated_s)
             return values
 
         return jax.lax.cond(is_input_or_bias, skip, compute, values)
@@ -95,7 +124,7 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
 
 def jax_genome_flatten(jg):
     children = (
-        jg.node_type, jg.conn_in, jg.conn_out, jg.conn_weight, jg.conn_enabled
+        jg.node_type, jg.node_activation, jg.conn_in, jg.conn_out, jg.conn_weight, jg.conn_enabled
     )
     aux = {
         "n_input": jg.n_input,
@@ -108,10 +137,11 @@ def jax_genome_flatten(jg):
 def jax_genome_unflatten(aux, children) -> JAXGenome:
     return JAXGenome(
         node_type=children[0],
-        conn_in=children[1],
-        conn_out=children[2],
-        conn_weight=children[3],
-        conn_enabled=children[4],
+        node_activation=children[1],
+        conn_in=children[2],
+        conn_out=children[3],
+        conn_weight=children[4],
+        conn_enabled=children[5],
         n_input=aux["n_input"],
         n_output=aux["n_output"],
         n_nodes=aux["n_nodes"],

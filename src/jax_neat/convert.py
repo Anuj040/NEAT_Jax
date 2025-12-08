@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 import jax.numpy as jnp
 
-from src.neat_core.genome import Genome, NodeType, NODE_TYPE_MAP
+from src.neat_core.genome import Genome, NodeType, NODE_TYPE_MAP, ACT_TYPE_MAP
 from src.jax_neat.policy import JAXGenome
 from src.jax_neat.config import NeatHyperParams
 
@@ -18,11 +18,16 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
 
     # Build node_type array
     node_type_arr = np.zeros((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
+    node_activation_arr = np.zeros((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
     id_to_idx = {}  # map old node id -> new index [0..n_nodes-1]
 
     for idx, nid in enumerate(node_ids):
         id_to_idx[nid] = idx
         node_type_arr[idx] = NODE_TYPE_MAP[gen.nodes[nid].type]
+        # ADDED: Map Python ActivationType to JAX integer ID
+        if gen.nodes[nid].type in (NodeType.HIDDEN, NodeType.OUTPUT):
+            # Only HIDDEN and OUTPUT nodes need an activation
+            node_activation_arr[idx] = ACT_TYPE_MAP[gen.nodes[nid].activation]
 
     # Count inputs and outputs from types
     input_mask = (node_type_arr[:n_nodes] == NODE_TYPE_MAP[NodeType.INPUT])
@@ -55,6 +60,7 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
     # Convert to JAX arrays
     return JAXGenome(
         node_type=jnp.array(node_type_arr),
+        node_activation=jnp.array(node_activation_arr),
         conn_in=jnp.array(conn_in),
         conn_out=jnp.array(conn_out),
         conn_weight=jnp.array(conn_weight),
@@ -74,7 +80,8 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
     max_conns = MODEL_CONFIG.MAX_CONNS
     P = len(genomes)
 
-    node_type   = np.zeros((P, max_nodes), dtype=np.int32)   # 3 = unused
+    node_type   = np.zeros((P, max_nodes), dtype=np.int32)
+    node_activation = np.zeros((P, max_nodes), dtype=np.int32)
     conn_in     = np.zeros((P, max_conns), dtype=np.int32)
     conn_out    = np.zeros((P, max_conns), dtype=np.int32)
     conn_weight = np.zeros((P, max_conns), dtype=np.float32)
@@ -123,6 +130,7 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
     # convert to JAX arrays
     params_batch = {
         "node_type":   jnp.array(node_type),
+        "node_activation": jnp.array(node_activation),
         "conn_in":     jnp.array(conn_in),
         "conn_out":    jnp.array(conn_out),
         "conn_weight": jnp.array(conn_weight),

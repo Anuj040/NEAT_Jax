@@ -10,6 +10,7 @@ from src.neat_core.mutation import (
     mutate_weights,
     mutate_add_connection,
     mutate_add_node,
+    mutate_activation,
     InnovationTracker,
 )
 
@@ -27,6 +28,7 @@ class NeatHyperParams:
     parent_frac: float = 0.5
     p_add_conn: float = 0.05
     p_add_node: float = 0.03
+    p_mutate_activation: float = 0.03
 
     # later: speciation params, compatibility coeffs, etc.
 
@@ -116,6 +118,8 @@ class Neat:
                 mutate_add_connection(child_genome, self.innov, self.rng)
             if self.rng.random() < hyp.p_add_node:
                 mutate_add_node(child_genome, self.innov, self.rng)
+            if self.rng.random() < hyp.p_mutate_activation:
+                mutate_activation(child_genome, self.rng, prob_mutate=0.5)
 
             new_population.append(Individual(genome=child_genome, fitness=0.0))
 

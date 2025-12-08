@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
-from src.neat_core.genome import Genome, NodeType, ConnectionGene, NodeGene
+from src.neat_core.genome import Genome, NodeType, ConnectionGene, NodeGene, ActivationType, ACT_TYPE_MAP
 
 
 @dataclass
@@ -137,3 +137,31 @@ def mutate_add_node(
     genome.connections.append(new_to_out)
 
     return True
+
+def mutate_activation(genome: Genome, rng: np.random.Generator, prob_mutate: float = 0.1) -> None:
+    """Mutate the activation function of a node with probability `prob_mutate`."""
+    
+    # Select nodes that are mutable (HIDDEN and OUTPUT)
+    mutable_nodes = [
+        node for node in genome.nodes.values()
+        if node.type in (NodeType.HIDDEN, NodeType.OUTPUT)
+    ]
+
+    if not mutable_nodes:
+        return
+
+    # Iterate through mutable nodes and apply mutation probability
+    for node in mutable_nodes:
+        if rng.random() < prob_mutate:
+            # Filter choices to those that are NOT the current activation
+            available_choices = [
+                act for act in ACT_TYPE_MAP.keys()
+                if act != node.activation
+            ]
+            
+            if not available_choices:
+                continue 
+
+            # Select and assign the new activation
+            new_activation = rng.choice(available_choices)
+            node.activation = new_activation

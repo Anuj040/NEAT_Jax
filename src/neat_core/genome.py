@@ -18,10 +18,24 @@ NODE_TYPE_MAP = {
     NodeType.BIAS: 4,
 }
 
+class ActivationType(str, Enum):
+    TANH = "tanh"
+    RELU = "relu"
+    SIGMOID = "sigmoid"
+    LINEAR = "linear"   # identity
+
+ACT_TYPE_MAP = {
+    ActivationType.TANH: 1,
+    ActivationType.RELU: 2,
+    ActivationType.SIGMOID: 3,
+    ActivationType.LINEAR: 4,
+}
+
 @dataclass
 class NodeGene:
     id: int
     type: NodeType
+    activation: ActivationType = ActivationType.TANH  # default; ignored for INPUT/BIAS
 
 
 @dataclass
@@ -46,7 +60,7 @@ class Genome:
         (DAG structure: only adding edges from lower -> higher ID.)
         """
         hidden_and_output = [
-            nid for nid, n in self.nodes.items()
+            (nid, n) for nid, n in self.nodes.items()
             if n.type in (NodeType.HIDDEN, NodeType.OUTPUT)
         ]
         return sorted(hidden_and_output)
@@ -79,7 +93,7 @@ class Genome:
         # Compute hidden and output nodes in order.
         eval_order = self._build_eval_order()
 
-        for nid in eval_order:
+        for nid, n in eval_order:
             incoming = [
                 c for c in self.connections
                 if c.enabled and c.out_id == nid
@@ -88,9 +102,8 @@ class Genome:
             for c in incoming:
                 # Missing in_id value should not happen if DAG is respected.
                 s += values.get(c.in_id, 0.0) * c.weight
-
-            # Activation function: tanh
-            values[nid] = float(np.tanh(s))
+            # Activation
+            values[nid] = self.activate(s, n.activation)
 
         # Collect outputs in sorted ID order.
         output_ids = sorted(
@@ -99,7 +112,20 @@ class Genome:
         )
         outputs = np.array([values[nid] for nid in output_ids], dtype=np.float32)
         return outputs
-
+    
+    @staticmethod
+    def activate(z: float, act: ActivationType) -> float:
+        # Define activation dispatcher
+        if act == ActivationType.TANH:
+            return float(np.tanh(z))
+        elif act == ActivationType.RELU:
+            return float(max(0.0, z))
+        elif act == ActivationType.SIGMOID:
+            return float(1.0 / (1.0 + np.exp(-z)))
+        elif act == ActivationType.LINEAR:
+            return float(z)
+        else:
+            return float(z)
 
 def make_minimal_genome(obs_dim: int, act_dim: int) -> Genome:
     """Create a minimal NEAT genome: inputs + bias fully connected to outputs.
