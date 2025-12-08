@@ -125,12 +125,11 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
     # Visuailize best genome
     eval_with_render_evojax(best.genome, episodes=1, max_steps=10)
 
-def eval_with_render_evojax(genome:Genome, episodes: int = 1, max_steps:int = 1000) -> None:
+def eval_with_render_evojax(genome:Genome, episodes: int = 1, max_steps:int = 1000, log_dir:str = './log/slimevolley') -> None:
     jg = genome_to_jax(genome, obs_dim=OBS_DIM, act_dim=ACT_DIM)
     test_env = SlimeVolley(test=True, max_steps=max_steps)
 
     total_return = 0.0
-    log_dir = './log/slimevolley'
     rng_seed = 0xFFFFFFFF
     key = random.PRNGKey(rng_seed)
     keys = random.split(key, num=episodes)

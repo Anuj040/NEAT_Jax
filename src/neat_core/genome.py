@@ -19,12 +19,14 @@ NODE_TYPE_MAP = {
 }
 
 class ActivationType(str, Enum):
+    NULL = "null"
     TANH = "tanh"
     RELU = "relu"
     SIGMOID = "sigmoid"
     LINEAR = "linear"   # identity
 
 ACT_TYPE_MAP = {
+    ActivationType.NULL: 0,
     ActivationType.TANH: 1,
     ActivationType.RELU: 2,
     ActivationType.SIGMOID: 3,

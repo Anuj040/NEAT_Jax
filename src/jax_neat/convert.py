@@ -18,7 +18,7 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
 
     # Build node_type array
     node_type_arr = np.zeros((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
-    node_activation_arr = np.zeros((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
+    node_activation_arr = np.ones((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
     id_to_idx = {}  # map old node id -> new index [0..n_nodes-1]
 
     for idx, nid in enumerate(node_ids):
@@ -81,7 +81,7 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
     P = len(genomes)
 
     node_type   = np.zeros((P, max_nodes), dtype=np.int32)
-    node_activation = np.zeros((P, max_nodes), dtype=np.int32)
+    node_activation = np.ones((P, max_nodes), dtype=np.int32)
     conn_in     = np.zeros((P, max_conns), dtype=np.int32)
     conn_out    = np.zeros((P, max_conns), dtype=np.int32)
     conn_weight = np.zeros((P, max_conns), dtype=np.float32)

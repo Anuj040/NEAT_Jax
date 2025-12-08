@@ -157,11 +157,12 @@ def mutate_activation(genome: Genome, rng: np.random.Generator, prob_mutate: flo
             available_choices = [
                 act for act in ACT_TYPE_MAP.keys()
                 if act != node.activation
+                and act != ActivationType.NULL
             ]
             
             if not available_choices:
                 continue 
 
             # Select and assign the new activation
-            new_activation = rng.choice(available_choices)
-            node.activation = new_activation
+            idx = rng.integers(0, len(available_choices))
+            node.activation = available_choices[idx]
