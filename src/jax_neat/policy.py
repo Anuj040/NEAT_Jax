@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import jax.lax as lax
 from src.neat_core.genome import NodeType, NODE_TYPE_MAP
 
-ACT_DIM = 3 # The known output dimension for SlimeVolley
 @dataclass
 class JAXGenome:
     node_type: jnp.ndarray      # int32, shape (MAX_NODES,)
@@ -46,7 +45,7 @@ def jax_activate(z, act_id):
 # In your JAX forward pass loop:
 # current_activation_id = jax_genome.node_activation[node_idx]
 # values[node_idx] = jax_activate(sum_of_weights, current_activation_id)
-def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
+def jax_forward(gen: JAXGenome, obs: jnp.ndarray, n_output:int) -> jnp.ndarray:
     """Feed-forward a NEAT genome in JAX.
 
     gen: JAXGenome
@@ -120,7 +119,7 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray) -> jnp.ndarray:
     # Collect outputs.
     # Assume outputs are the last n_output nodes: [n_nodes - n_output .. n_nodes)
     start = gen.n_nodes - gen.n_output
-    return jax.lax.dynamic_slice(values, (start,), (ACT_DIM,))
+    return jax.lax.dynamic_slice(values, (start,), (n_output,))
 
 def jax_genome_flatten(jg):
     children = (

@@ -18,16 +18,17 @@ ACT_DIM = 3   # SlimeVolley action size (MultiBinary(3))
 
 neat_policy_batched = jax.vmap(
     slime_policy_jax,
-    in_axes=(0, 0),   # params_batch[0], obs_batch[0] go together, etc.
+    in_axes=(0, 0, None),
     out_axes=0,
 )
 
-@jax.jit(static_argnums=(1, 2))
+@jax.jit(static_argnums=(1, 2, 4))
 def rollout_batched(
     params_batch: dict,     # dict of arrays with shape (B, ...)
     episodes: int,
     max_steps: int,
     key: jnp.ndarray,
+    n_output: int = ACT_DIM,
 ) -> jnp.ndarray:
     """
     Fully JAXed batched rollout for NEAT policies in SlimeVolley.
@@ -60,7 +61,7 @@ def rollout_batched(
         obs = state.obs  # (B, obs_dim)
 
         # Compute actions for all envs
-        actions = neat_policy_batched(params_slots, obs)  # (B, 3)
+        actions = neat_policy_batched(params_slots, obs, n_output)
 
         # Step env
         next_state, reward, done = env.step(state, actions)
@@ -213,7 +214,7 @@ def jax_rollout_step(carry, t, jg_params):
     # 1. Compute Action
     # Obs is (1, obs_dim). Need to pass obs[0] to single-policy function.
     obs = state.obs[0] 
-    action = slime_policy_jax(jg_params, obs)
+    action = slime_policy_jax(jg_params, obs, n_output=ACT_DIM)
 
     # 2. Step Environment
     next_state, reward, done = test_env_single.step(state, jnp.expand_dims(action, 0))
@@ -260,7 +261,7 @@ def eval_with_render_evojax(genome:Genome, episodes: int = 1, max_steps:int = 10
 
         # JAX Computation (rollout)
         # Use jax.lax.scan to replace the Python 'for _ in range(max_steps)' loop
-        (final_state, final_returns, _), (scanned_states, scanned_returns, scanned_dones) = jax.lax.scan(
+        (_, final_returns, _), (scanned_states, _, _) = jax.lax.scan(
             lambda carry, t: jax_rollout_step(carry, t, jg_params),
             init_carry,
             jnp.arange(max_steps),

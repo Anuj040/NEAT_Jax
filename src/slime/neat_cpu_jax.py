@@ -12,11 +12,10 @@ try:
 except:
     pass
 
-def slime_policy_jax(jg:JAXGenome, obs_np: np.ndarray) -> jnp.ndarray:
+def slime_policy_jax(jg:JAXGenome, obs_np: np.ndarray, n_output:int) -> jnp.ndarray:
     """Wrapper used by gym loop."""
     obs = jnp.array(obs_np, dtype=jnp.float32)
-    raw = jax_forward(jg, obs)  # (3,)
-    # Binary actions (MultiBinary(3))
+    raw = jax_forward(jg, obs, n_output) 
     return (raw > 0.0).astype(jnp.int32)
 
 
