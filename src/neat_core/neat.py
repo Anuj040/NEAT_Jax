@@ -19,7 +19,7 @@ from src.neat_core.mutation import (
 @dataclass
 class Individual:
     genome: Genome
-    fitness: float = 0.0
+    fitness: float = -np.inf
 
 
 @dataclass
@@ -135,7 +135,7 @@ class Neat:
             if self.rng.random() < hyp.p_mutate_activation:
                 mutate_activation(child_genome, self.rng, prob_mutate=0.5)
 
-            new_population.append(Individual(genome=child_genome, fitness=0.0))
+            new_population.append(Individual(genome=child_genome))
 
         return new_population
 
