@@ -1,373 +1,236 @@
-import graphviz
-import imageio.v3 as iio
+import os
 from pathlib import Path
+import matplotlib.pyplot as plt
+import imageio.v2 as imageio
+import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
-from PIL import Image
+
 from src.neat_core.genome import Genome, NodeType
 
-def render_genome_graph(
-    genome: Genome, 
-    filename: str = 'genome_graph', 
-    directory: str = './log/neat_graphs',
-    view: bool = False
-) -> str:
+def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
     """
-    Renders the NEAT genome graph with small circles and external labels,
-    emphasizing clarity for small nodes.
-    """
-    # Use Path objects internally for robust directory handling
-    output_dir = Path(directory)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    dot = graphviz.Digraph(
-        comment='NEAT Genome', 
-        graph_attr={
-            'rankdir': 'LR', 
-            'splines': 'line',
-            # Fixed canvas size for reliable GIF creation
-            'size': '8,6!', 
-            'page': '8,6',
-            'margin': '0.5',
-            'dpi': '300'
-        },
-        node_attr={
-            # General style for non-bias nodes
-            'shape': 'circle', 
-            'style': 'filled',
-            # Small node size
-            'fixedsize': 'true', 
-            'width': '0.2',
-            'height': '0.2',
-            'label': ''        
-        }
-    )
+    Visualize a NEAT Genome.
 
-    # --- 1. Identify and Add Nodes & Set External Labels ---
-    input_ids, bias_ids, hidden_ids, output_ids = [], [], [], []
+    - Circle nodes for INPUT / HIDDEN / OUTPUT
+    - Square nodes for BIAS
+    - Node color encodes NodeType
+    - Edge color encodes sign of weight (e.g. blue=positive, red=negative)
+    - Edge thickness encodes |weight|
+    - Activation label printed next to HIDDEN / OUTPUT nodes
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+    G = nx.DiGraph()
+
+    # Add nodes with type info
     for nid, node in genome.nodes.items():
-        color_map = {
-            NodeType.INPUT: 'lightblue',
-            NodeType.BIAS: 'gray',
-            NodeType.HIDDEN: 'yellow',
-            NodeType.OUTPUT: 'lightcoral'
-        }
-        fillcolor = color_map.get(node.type, 'white')
-        
-        # 🎯 Improvement 1: Include Node ID in the external label
-        if node.type in (NodeType.HIDDEN, NodeType.OUTPUT):
-            # Show ID and Activation Type outside the node
-            xlabel_text = f"ID:{nid}\n{node.activation.name}"
-        else:
-            # Show ID and Type name (input/bias) outside the node
-            xlabel_text = f"ID:{nid}\n{node.type.name.lower()}"
+        G.add_node(nid, node_type=node.type, activation=node.activation)
 
-        node_shape = 'circle'
-        if node.type == NodeType.BIAS:
-            node_shape = 'box'
-            
-        # Add the node
-        dot.node(
-            name=str(nid), 
-            fillcolor=fillcolor,
-            xlabel=xlabel_text,
-            fontsize='8', # Smaller font size for the external label
-            shape=node_shape
-        )
-        
-        # Group IDs for layering
-        if node.type == NodeType.INPUT:
-            input_ids.append(str(nid))
-        elif node.type == NodeType.BIAS:
-            bias_ids.append(str(nid))
-        elif node.type == NodeType.HIDDEN:
-            hidden_ids.append(str(nid))
-        elif node.type == NodeType.OUTPUT:
-            output_ids.append(str(nid))
-            
-    # --- 2. Enforce Layering (Ranks) ---
-
-    # 1. Inputs (First Layer)
-    with dot.subgraph(name='cluster_input') as sub:
-        sub.attr(rank='same', label='Input Layer', color='transparent')
-        for nid in input_ids:
-            sub.node(nid)
-    
-    # 2. Bias (Grouped visually with Inputs)
-    with dot.subgraph(name='cluster_bias') as sub:
-        sub.attr(rank='same', label='Bias', color='transparent')
-        for nid in bias_ids:
-            sub.node(nid)
-            
-    # 3. Hidden Nodes (Middle Layer)
-    if hidden_ids:
-        with dot.subgraph(name='cluster_hidden') as sub:
-            sub.attr(rank='same', label='Hidden Layer', color='transparent')
-            for nid in hidden_ids:
-                sub.node(nid)
-
-    # 4. Outputs (Last Layer)
-    with dot.subgraph(name='cluster_output') as sub:
-        sub.attr(rank='same', label='Output Layer', color='transparent')
-        for nid in output_ids:
-            sub.node(nid)
-
-    # --- 3. Add Connections (Weight labels removed, thickness/color used) ---
-    for conn in genome.connections:
-        if not conn.enabled:
-            style = 'dashed'
-            color = 'lightgray'
-            thickness = '0.5'
-        else:
-            style = 'solid'
-            if conn.weight >= 0:
-                color = 'green'
-            else:
-                color = 'red'
-            # Line thickness based on weight magnitude
-            thickness = str(0.5 + abs(conn.weight) * 1.5) 
-
-        dot.edge(
-            str(conn.in_id), 
-            str(conn.out_id), 
-            color=color,
-            style=style,
-            penwidth=thickness
+    # Add edges with weight + enabled info
+    for c in genome.connections:
+        G.add_edge(
+            c.in_id,
+            c.out_id,
+            weight=c.weight,
+            enabled=c.enabled,
         )
 
-    # --- 4. Render and Save ---
-    try:
-        output_path = dot.render(filename=filename, directory=directory, format='png', view=view, cleanup=True)
-        return output_path
-    except graphviz.backend.ExecutableNotFound:
-        print("\n--- ERROR ---")
-        print("Graphviz executable not found. Please install the system package.")
-        return ""
-    
-# def render_genome_graph(
-#     genome: Genome, 
-#     filename: str = 'genome_graph', 
-#     directory: str = './log/neat_graphs',
-#     view: bool = False
-# ) -> str:
-#     """
-#     Renders the NEAT genome graph with small circles and external labels.
-#     """
-#     # Use Path objects internally for robust directory handling
-#     output_dir = Path(directory)
-#     output_dir.mkdir(parents=True, exist_ok=True)
-    
-#     dot = graphviz.Digraph(
-#         comment='NEAT Genome', 
-#         graph_attr={
-#             # General layout
-#             'rankdir': 'LR', 
-#             'splines': 'line',
-#             # FIX: Consistent canvas size (critical for GIF creation)
-#             'size': '8,6!', 
-#             'page': '8,6',
-#             'margin': '0.5',
-#             'dpi': '300'
-#         },
-#         node_attr={
-#             'shape': 'circle', 
-#             'style': 'filled',
-#             # 🎯 FIX 1: Smaller node size
-#             'fixedsize': 'true', 
-#             'width': '0.35',   # Significantly reduced width
-#             'height': '0.35',  # Significantly reduced height
-#             # 🎯 FIX 2: Set the internal label to be empty
-#             'label': ''        
-#         }
-#     )
+    # ---- Layout: place nodes by type in vertical columns ----
+    # You can tweak these x-coordinates if you prefer a different layout.
+    type_to_x = {
+        NodeType.INPUT: 0.0,
+        NodeType.BIAS: 0.5,
+        NodeType.HIDDEN: 1.5,
+        NodeType.OUTPUT: 2.5,
+    }
 
-#     # --- 1. Identify and Add Nodes & Set External Labels ---
-#     input_ids, bias_ids, hidden_ids, output_ids = [], [], [], []
-#     for nid, node in genome.nodes.items():
-#         color_map = {
-#             NodeType.INPUT: 'lightblue',
-#             NodeType.BIAS: 'gray',
-#             NodeType.HIDDEN: 'yellow',
-#             NodeType.OUTPUT: 'lightcoral'
-#         }
-#         fillcolor = color_map.get(node.type, 'white')
-        
-#         # 🎯 FIX 3: Create the external label string
-#         if node.type in (NodeType.HIDDEN, NodeType.OUTPUT):
-#             # Show ID and Activation Type outside the node
-#             xlabel_text = f"{node.activation.name}"
-#         else:
-#             # Show ID and Type name outside the node
-#             xlabel_text = f"{node.type.name.lower()}"
+    # Group nodes by type
+    groups: dict[NodeType, list[int]] = {t: [] for t in NodeType}
+    for nid, node in genome.nodes.items():
+        groups[node.type].append(nid)
 
-#         # Add the node, using the 'xlabel' attribute for the external label
-#         dot.node(
-#             name=str(nid), 
-#             fillcolor=fillcolor,
-#             xlabel=xlabel_text,
-#             fontsize='8' # Smaller font size for the external label
-#         )
-        
-#         # Group IDs for layering
-#         if node.type == NodeType.INPUT:
-#             input_ids.append(str(nid))
-#         elif node.type == NodeType.BIAS:
-#             bias_ids.append(str(nid))
-#         elif node.type == NodeType.HIDDEN:
-#             hidden_ids.append(str(nid))
-#         elif node.type == NodeType.OUTPUT:
-#             output_ids.append(str(nid))
-            
-#     # --- 2. Enforce Layering (Ranks) ---
-#     # ... (Layering logic remains the same as the previous correction) ...
+    # Assign positions
+    pos: dict[int, tuple[float, float]] = {}
+    for ntype, ids in groups.items():
+        if not ids:
+            continue
+        ids = sorted(ids)
+        # Spread them vertically
+        ys = np.linspace(0.0, 1.0, len(ids) + 2)[1:-1]
+        x = type_to_x[ntype]
+        for nid, y in zip(ids, ys):
+            pos[nid] = (x, y)
 
-#     # 1. Inputs (First Layer)
-#     with dot.subgraph(name='cluster_input') as sub:
-#         sub.attr(rank='same', label='Input Layer', color='transparent')
-#         for nid in input_ids:
-#             sub.node(nid)
-    
-#     # 2. Bias (Grouped visually with Inputs)
-#     with dot.subgraph(name='cluster_bias') as sub:
-#         sub.attr(rank='same', label='Bias', color='transparent')
-#         for nid in bias_ids:
-#             sub.node(nid)
-            
-#     # 3. Hidden Nodes (Middle Layer)
-#     if hidden_ids:
-#         with dot.subgraph(name='cluster_hidden') as sub:
-#             sub.attr(rank='same', label='Hidden Layer', color='transparent')
-#             for nid in hidden_ids:
-#                 sub.node(nid)
+    # ---- Draw nodes (by type so we can change shapes) ----
+    node_colors = {
+        NodeType.INPUT: "#8dd3c7",   # mint-ish
+        NodeType.HIDDEN: "#ffffb3",  # pale yellow
+        NodeType.OUTPUT: "#bebada",  # lavender
+        NodeType.BIAS: "#fdb462",    # orange
+    }
 
-#     # 4. Outputs (Last Layer)
-#     with dot.subgraph(name='cluster_output') as sub:
-#         sub.attr(rank='same', label='Output Layer', color='transparent')
-#         for nid in output_ids:
-#             sub.node(nid)
+    # Circle for input/hidden/output, square for bias
+    for ntype, shape in [
+        (NodeType.INPUT, "o"),
+        (NodeType.HIDDEN, "o"),
+        (NodeType.OUTPUT, "o"),
+        (NodeType.BIAS, "s"),
+    ]:
+        nodelist = [nid for nid, node in genome.nodes.items() if node.type == ntype]
+        if not nodelist:
+            continue
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            nodelist=nodelist,
+            node_shape=shape,
+            node_color=node_colors[ntype],
+            edgecolors="black",
+            linewidths=1.0,
+            ax=ax,
+        )
 
-#     # --- 3. Add Connections (Weight labels removed, thickness/color used) ---
-#     for conn in genome.connections:
-#         if not conn.enabled:
-#             style = 'dashed'
-#             color = 'lightgray'
-#             thickness = '0.5'
-#         else:
-#             style = 'solid'
-#             if conn.weight >= 0:
-#                 color = 'green'
-#             else:
-#                 color = 'red'
-#             # Line thickness based on weight magnitude
-#             thickness = str(0.5 + abs(conn.weight) * 1.5) 
-
-#         dot.edge(
-#             str(conn.in_id), 
-#             str(conn.out_id), 
-#             color=color,
-#             style=style,
-#             penwidth=thickness
-#         )
-
-#     # --- 4. Render and Save ---
-#     try:
-#         output_path = dot.render(filename=filename, directory=directory, format='png', view=view, cleanup=True)
-#         return output_path
-#     except graphviz.backend.ExecutableNotFound:
-#         print("\n--- ERROR ---")
-#         print("Graphviz executable not found. Please install the system package.")
-#         return ""
-      
-# def create_evolution_gif(
-#     image_paths: list[str], 
-#     output_gif_path: str, 
-#     duration_ms: int = 500
-# ) -> None:
-#     """
-#     Combines a list of image file paths into a single animated GIF.
-    
-#     Args:
-#         image_paths: List of file paths (e.g., PNGs) to include in the GIF, ordered by time.
-#         output_gif_path: The full path and filename for the resulting GIF.
-#         duration_ms: How long each frame should display (in milliseconds).
-#     """
-#     if not image_paths:
-#         print("No images found to create GIF.")
-#         return
-        
-#     print(f"Creating GIF from {len(image_paths)} images...")
-    
-#     # Read all images into a list
-#     images = [iio.imread(path) for path in image_paths]
-    
-#     # Write the list of images as an animated GIF
-#     iio.imwrite(
-#         output_gif_path, 
-#         images, 
-#         duration=duration_ms / 1000.0, # imageio expects duration in seconds
-#         loop=0 # 0 means loop forever
-#     )
-#     print(f"Successfully created evolution GIF: {output_gif_path}")
-
-def create_evolution_gif(
-    image_paths: list[str], 
-    output_gif_path: Path, 
-    duration_ms: int = 500
-) -> None:
-    """
-    Combines a list of image file paths into a single animated GIF, 
-    enforcing consistent shape via Pillow padding to fix the ValueError.
-    """
-    if not image_paths:
-        print("No images found to create GIF.")
-        return
-        
-    print(f"Creating GIF from {len(image_paths)} images...")
-    
-    max_width, max_height = 0, 0
-    images_pil = []
-
-    # --- Step 1: Find Max Dimensions and Load Images ---
-    for path in image_paths:
-        try:
-            # Open the image using Pillow
-            img = Image.open(path)
-            images_pil.append(img)
-            
-            # Track the maximum width and height found so far
-            max_width = max(max_width, img.width)
-            max_height = max(max_height, img.height)
-        except FileNotFoundError:
-            print(f"Warning: Image file not found at {path}. Skipping.")
-        except Exception as e:
-            print(f"Error loading image {path}: {e}. Skipping.")
-
-    if not images_pil:
-        print("No valid images were loaded. Aborting GIF creation.")
-        return
-
-    # --- Step 2: Pad All Images to Max Dimensions ---
-    processed_images = []
-    
-    # We use white (255, 255, 255, 255) as the background color for padding.
-    # Note: PNGs often have 4 channels (RGBA).
-    for img in images_pil:
-        # Create a new blank canvas with the max dimensions and 4 channels (RGBA)
-        new_img = Image.new('RGBA', (max_width, max_height), color='white')
-        
-        # Calculate offset to center the original image on the new canvas
-        x_offset = (max_width - img.width) // 2
-        y_offset = (max_height - img.height) // 2
-        
-        # Paste the original image onto the center of the canvas
-        new_img.paste(img, (x_offset, y_offset))
-        
-        # Convert the padded PIL image back to a NumPy array for imageio
-        processed_images.append(np.array(new_img))
-        
-    iio.imwrite(
-        output_gif_path, 
-        processed_images, # Use the list of shape-consistent NumPy arrays
-        duration=duration_ms,
-        loop=0
+    # Node labels: just the node ID
+    labels = {nid: str(nid) for nid in genome.nodes.keys()}
+    nx.draw_networkx_labels(
+        G,
+        pos,
+        labels=labels,
+        font_size=8,
+        ax=ax,
     )
-    print(f"Successfully created evolution GIF: {output_gif_path}")
+
+    # Activation labels near hidden & output nodes
+    for nid, node in genome.nodes.items():
+        if node.type in (NodeType.HIDDEN, NodeType.OUTPUT):
+            x, y = pos[nid]
+            act_label = node.activation.value
+            ax.text(
+                x + 0.08,
+                y + 0.03,
+                act_label,
+                fontsize=7,
+                ha="left",
+                va="center",
+            )
+
+    # ---- Draw edges, encoding sign + magnitude ----
+    enabled_edges = []
+    disabled_edges = []
+    for u, v, data in G.edges(data=True):
+        if data.get("enabled", True):
+            enabled_edges.append((u, v, data["weight"]))
+        else:
+            disabled_edges.append((u, v))
+
+    # Enabled edges: color by sign, width by |weight|
+    if enabled_edges:
+        weights = np.array([abs(w) for _, _, w in enabled_edges])
+        max_w = weights.max() if len(weights) > 0 else 1.0
+        # Scale to a reasonable linewidth range
+        widths = 0.5 + 2.5 * (weights / max_w)
+
+        colors = []
+        for _, _, w in enabled_edges:
+            if w > 0:
+                colors.append("tab:blue")
+            elif w < 0:
+                colors.append("tab:red")
+            else:
+                colors.append("gray")
+
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            edgelist=[(u, v) for u, v, _ in enabled_edges],
+            width=widths,
+            edge_color=colors,
+            arrows=True,
+            arrowstyle="-|>",
+            arrowsize=10,
+            ax=ax,
+        )
+
+    # Disabled edges: faint dashed
+    if disabled_edges:
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            edgelist=disabled_edges,
+            style="dashed",
+            alpha=0.3,
+            edge_color="gray",
+            arrows=False,
+            ax=ax,
+        )
+
+    ax.set_axis_off()
+    ax.set_title("NEAT Genome", fontsize=12)
+    plt.tight_layout()
+    return ax
+
+
+class GenomeEvolutionRecorder:
+    """
+    Helper to periodically save genome graphs and later create a GIF.
+
+    Usage:
+        rec = GenomeEvolutionRecorder("viz_runs/run1")
+
+        for gen in range(num_generations):
+            ... evolve population ...
+            best = pick_best_genome(...)
+            rec.save_genome_frame(best, label=f"gen {gen}")
+
+        rec.make_gif("evolution.gif", fps=2)
+    """
+
+    def __init__(self, out_dir: str | os.PathLike, prefix: str = "frame"):
+        self.out_dir = Path(out_dir)
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.prefix = prefix
+        self.frame_idx = 0
+        self.frames: list[Path] = []
+
+    def save_genome_frame(self, genome: Genome, label: str | None = None) -> Path:
+        """Render and save a single frame for this genome.
+
+        Returns path to the saved PNG.
+        """
+        fig, ax = plt.subplots(figsize=(8, 6))
+        draw_genome(genome, ax=ax)
+
+        if label is not None:
+            # Append extra info (e.g., generation, fitness)
+            ax.set_title(f"{ax.get_title()}  |  {label}", fontsize=10)
+
+        fname = f"{self.prefix}_{self.frame_idx:05d}.png"
+        fpath = self.out_dir / fname
+
+        fig.savefig(fpath, dpi=120)
+        plt.close(fig)
+
+        self.frames.append(fpath)
+        self.frame_idx += 1
+        return fpath
+
+    def make_gif(self, gif_path: str | os.PathLike, duration_ms: int = 1000):
+        """Combine all saved frames into a GIF."""
+        gif_path = Path(gif_path)
+        # Sort frames by name just in case
+        frame_files = sorted(self.frames, key=lambda p: p.name)
+
+        if not frame_files:
+            raise RuntimeError("No frames to make GIF from. Did you call save_genome_frame()?")
+
+        images = [imageio.imread(str(p)) for p in frame_files]
+        # duration = 1.0 / fps  # seconds per frame
+
+        # imageio.mimsave(str(gif_path), images, duration=duration)
+        # images = [imageio.imread(str(p)) for p in frame_files]
+        # durations = [1/fps] * len(images)
+
+        imageio.mimsave(str(gif_path), images, duration=duration_ms)
+        print(f"GIF saved to: {gif_path}")

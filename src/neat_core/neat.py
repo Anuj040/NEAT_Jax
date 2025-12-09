@@ -10,7 +10,8 @@ from src.neat_core.mutation import (
     mutate_weights,
     mutate_add_connection,
     mutate_add_node,
-    mutate_activation,
+    mutate_activation, 
+    crossover_genomes,
     InnovationTracker,
 )
 
@@ -107,12 +108,25 @@ class Neat:
 
         # 2) mutated children from parent pool
         while len(new_population) < pop_size:
-            parent = self.rng.choice(population[:n_parent_pool])
-            child_genome = copy.deepcopy(parent.genome)
+            # parent = self.rng.choice(population[:n_parent_pool])
+            parent_pool = population[:n_parent_pool]
+            idx1, idx2 = self.rng.choice(len(parent_pool), size=2, replace=False)
+            parent1 = parent_pool[idx1]
+            parent2 = parent_pool[idx2]
+
+            # Determine the dominant (fitter) and non-dominant parent
+            is_parent1_dominant = (parent1.fitness > parent2.fitness) or \
+                                (parent1.fitness == parent2.fitness and self.rng.random() < 0.5)
+
+            dominant = parent1 if is_parent1_dominant else parent2
+            submissive = parent2 if is_parent1_dominant else parent1
+
+            # The function handles dominance based on fitness
+            child_genome = crossover_genomes(dominant.genome, submissive.genome, self.rng)
+            # child_genome = copy.deepcopy(dominant.genome)
 
             # Always mutate weights
             mutate_weights(child_genome, self.rng)
-
             # Sometimes add connection / node
             if self.rng.random() < hyp.p_add_conn:
                 mutate_add_connection(child_genome, self.innov, self.rng)

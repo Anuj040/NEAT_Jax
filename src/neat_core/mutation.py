@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import numpy as np
+from copy import deepcopy
+from typing import Optional
 
 from src.neat_core.genome import Genome, NodeType, ConnectionGene, NodeGene, ActivationType, ACT_TYPE_MAP
 
@@ -138,6 +140,7 @@ def mutate_add_node(
 
     return True
 
+
 def mutate_activation(genome: Genome, rng: np.random.Generator, prob_mutate: float = 0.1) -> None:
     """Mutate the activation function of a node with probability `prob_mutate`."""
     
@@ -166,3 +169,62 @@ def mutate_activation(genome: Genome, rng: np.random.Generator, prob_mutate: flo
             # Select and assign the new activation
             idx = rng.integers(0, len(available_choices))
             node.activation = available_choices[idx]
+
+
+def crossover_genomes(dominant: Genome, submissive: Genome, rng: np.random.Generator) -> Genome:
+    """
+    Performs NEAT crossover to create a child genome.
+    The parent with the higher fitness is chosen as the dominant parent.
+    but here we rely on the caller to determine dominance if fitness is equal.
+    """
+    
+    child = deepcopy(dominant) 
+    child.connections = []
+    
+    all_nodes = {**dominant.nodes, **submissive.nodes}
+    child.nodes = all_nodes
+    # Inherit Connections (Genes)
+    # Maps for easy lookup by innovation number
+    dominant_conn_map = {c.innovation: c for c in dominant.connections}
+    submissive_conn_map = {c.innovation: c for c in submissive.connections}
+    
+    all_innovations = set(dominant_conn_map.keys()) | set(submissive_conn_map.keys())
+    
+    for innov_num in sorted(list(all_innovations)):
+        conn_dominant = dominant_conn_map.get(innov_num)
+        conn_submissive = submissive_conn_map.get(innov_num)
+        
+        chosen_conn: Optional[ConnectionGene] = None
+        
+        if conn_dominant and conn_submissive:
+            if rng.random() < 0.5:
+                chosen_conn = conn_dominant
+            else:
+                chosen_conn = conn_submissive
+            
+            # NEAT typically has a rule: if one is disabled, the disabled one is inherited 
+            # with 75% probability, regardless of fitness. For simplicity, we stick to 
+            # random choice of the two connection copies, assuming they have the same structure.
+            
+        elif conn_dominant:
+            # Disjoint/Excess Gene in Dominant Parent: Always inherited
+            chosen_conn = conn_dominant
+        
+        elif conn_submissive:
+            # Disjoint/Excess Gene in Submissive Parent: Never inherited
+            pass
+            
+        if chosen_conn:
+            # Create a deep copy of the gene for the child
+            child.connections.append(deepcopy(chosen_conn))
+    
+    # Re-verify node set (optional, but safer)
+    all_node_ids = set(child.nodes.keys())
+    for conn in child.connections:
+        if conn.in_id not in all_node_ids:
+            # This should only happen if disjoint genes were allowed from submissive parent
+            # or if the genome structure is incomplete. We skip explicit node merging 
+            # for now, assuming your `Genome` ensures node completeness upon creation.
+            pass
+
+    return child

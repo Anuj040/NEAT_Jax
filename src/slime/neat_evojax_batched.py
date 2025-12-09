@@ -2,7 +2,6 @@ import time
 import numpy as np
 import jax.random as random
 import jax.numpy as jnp
-import os
 import jax
 from evojax.task.slimevolley import SlimeVolley
 from pathlib import Path
@@ -12,7 +11,7 @@ from src.slime.neat_cpu_jax import slime_policy_jax
 from src.neat_core.neat import Neat, NeatHyperParams
 from src.neat_core.genome import Genome
 from src.slime.neat_evojax import eval_with_render_evojax
-from src.neat_core.visualize import render_genome_graph, create_evolution_gif
+from src.neat_core.visualize import GenomeEvolutionRecorder
 
 OBS_DIM = 12  # SlimeVolley state observation size (fixed)
 ACT_DIM = 3   # SlimeVolley action size (MultiBinary(3))
@@ -181,8 +180,8 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
     )
     
     log_dir = Path('./log/slimevolley')
-    graph_image_paths = []
-    gif_path = log_dir / "snapshots"
+    gif_path = log_dir / "snapshots_nocross"
+    rec = GenomeEvolutionRecorder(gif_path)
     for gen in range(generations):
         genomes:list[Genome] = neat.ask()
         fitnesses = evaluate_population_evojax(genomes, episodes=episodes_per_genome, max_steps=1000, pop_size=pop_size)
@@ -193,23 +192,13 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
             f"Gen {gen:03d}  best_fit={best.fitness:.3f}  "
             f"nodes={len(best.genome.nodes)}  conns={len(best.genome.connections)}"
         )
-        if gen % 1 == 10 or gen == generations - 1:
-            render_genome_graph(
-                genome=best.genome, 
-                filename=f'gen_{gen:03d}',
-                directory=gif_path,
-                view=False # Set to True to immediately open the image
-            )
-            graph_image_paths.append(str(gif_path / f'gen_{gen:03d}.png'))
+        if gen % 10 == 0 or gen == generations - 1:
+            rec.save_genome_frame(best.genome, label=f"gen {gen}")
 
     # After training, you can test best genome with rendering if SlimeVolley supports it.
     best = neat.get_best()
     final_gif_path = gif_path / "neat_evolution.gif"
-    create_evolution_gif(
-        image_paths=graph_image_paths,
-        output_gif_path=final_gif_path,
-        duration_ms=500
-    )
+    rec.make_gif(final_gif_path, duration_ms=500)
     # Visuailize best genome
     eval_with_render_evojax(best.genome, episodes=1, max_steps=1000, log_dir='./log/slimevolley')
 
