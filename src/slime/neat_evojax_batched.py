@@ -5,12 +5,15 @@ import jax.numpy as jnp
 import os
 import jax
 from evojax.task.slimevolley import SlimeVolley
+from pathlib import Path
 
-from src.jax_neat.convert import genomes_to_params_batch, genome_to_jax
+from src.jax_neat.convert import genomes_to_params_batch
 from src.slime.neat_cpu_jax import slime_policy_jax
 from src.neat_core.neat import Neat, NeatHyperParams
 from src.neat_core.genome import Genome
 from src.slime.neat_evojax import eval_with_render_evojax
+from src.neat_core.visualize import render_genome_graph, create_evolution_gif
+
 OBS_DIM = 12  # SlimeVolley state observation size (fixed)
 ACT_DIM = 3   # SlimeVolley action size (MultiBinary(3))
 
@@ -67,11 +70,10 @@ def rollout_batched(
         next_state, reward, done = env.step(state, actions)
         reward = jnp.squeeze(reward)  # (B,)
         done = jnp.squeeze(done)      # (B,)
-
         # Only accumulate reward if not already done
         # (This allows env to keep stepping but we freeze returns per episode.)
-        active = ~done_carry
-        returns = returns + jnp.where(active, reward, 0.0)
+        # active = ~done_carry
+        returns = returns + reward#jnp.where(active, reward, 0)
 
         # Once done, stay done
         done_carry = jnp.logical_or(done_carry, done)
@@ -82,14 +84,14 @@ def rollout_batched(
         return new_carry, None
 
     B_bool = jnp.zeros((B,), dtype=bool)
-    init_returns = jnp.zeros((B,), dtype=jnp.float32)
+    init_returns = jnp.zeros((B,), dtype=jnp.int32)
     (_, final_returns, _), _ = jax.lax.scan(
         step_fn,
         (state, init_returns, B_bool),
         jnp.arange(max_steps),
     )
 
-    returns_matrix = final_returns.reshape(P, episodes)  # (P, episodes)
+    returns_matrix = final_returns.reshape(P, episodes).astype(jnp.float32) # (P, episodes)
     return jnp.mean(returns_matrix, axis=1)
 
 def evaluate_genome_slime_evojax(
@@ -169,6 +171,7 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
         parent_frac=0.5,
         p_add_conn=0.1,
         p_add_node=0.05,
+        p_mutate_activation=0.03,
     )
     neat = Neat(
         obs_dim=OBS_DIM,
@@ -176,11 +179,13 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
         hyp=hyparams,
         seed=42,
     )
-
+    
+    log_dir = Path('./log/slimevolley')
+    graph_image_paths = []
+    gif_path = log_dir / "snapshots"
     for gen in range(generations):
-        genomes = neat.ask()  # list[Genome]
-        fitnesses = evaluate_population_evojax(genomes, episodes=episodes_per_genome, max_steps=10, pop_size=pop_size)#00)
-
+        genomes:list[Genome] = neat.ask()
+        fitnesses = evaluate_population_evojax(genomes, episodes=episodes_per_genome, max_steps=1000, pop_size=pop_size)
         neat.tell(fitnesses)
 
         best = neat.get_best()
@@ -188,18 +193,32 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
             f"Gen {gen:03d}  best_fit={best.fitness:.3f}  "
             f"nodes={len(best.genome.nodes)}  conns={len(best.genome.connections)}"
         )
+        if gen % 1 == 10 or gen == generations - 1:
+            render_genome_graph(
+                genome=best.genome, 
+                filename=f'gen_{gen:03d}',
+                directory=gif_path,
+                view=False # Set to True to immediately open the image
+            )
+            graph_image_paths.append(str(gif_path / f'gen_{gen:03d}.png'))
 
     # After training, you can test best genome with rendering if SlimeVolley supports it.
     best = neat.get_best()
+    final_gif_path = gif_path / "neat_evolution.gif"
+    create_evolution_gif(
+        image_paths=graph_image_paths,
+        output_gif_path=final_gif_path,
+        duration_ms=500
+    )
     # Visuailize best genome
-    eval_with_render_evojax(best.genome, episodes=1, max_steps=1000)
+    eval_with_render_evojax(best.genome, episodes=1, max_steps=1000, log_dir='./log/slimevolley')
 
 if __name__ == "__main__":
     import time
     start = time.time()
     train_neat_on_slime(
-        generations=5,
-        episodes_per_genome=2,
-        pop_size=10,
+        generations=50,
+        episodes_per_genome=5,
+        pop_size=200,
         )
     print(f"Total training time: {time.time() - start} seconds")
