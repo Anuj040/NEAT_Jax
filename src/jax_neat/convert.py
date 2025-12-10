@@ -103,9 +103,12 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
         # fill node_type row
         for nid, jidx in id_to_idx.items():
             try:
-                node_type[i, jidx] = NODE_TYPE_MAP[g.nodes[nid].type]
+                nd_type = g.nodes[nid].type
+                node_type[i, jidx] = NODE_TYPE_MAP[nd_type]
+                if nd_type in (NodeType.HIDDEN, NodeType.OUTPUT):
+                    node_activation[i, jidx] = ACT_TYPE_MAP[g.nodes[nid].activation]
             except KeyError:
-                raise KeyError(f"Unknown node type: {g.nodes[nid].type}")
+                raise KeyError(f"Unknown node type: {nd_type}")
 
         # count inputs/outputs
         n_input[i]  = sum(1 for nid in node_ids if g.nodes[nid].type == NodeType.INPUT)

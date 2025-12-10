@@ -121,6 +121,7 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray, n_output:int) -> jnp.ndarray:
     start = gen.n_nodes - gen.n_output
     return jax.lax.dynamic_slice(values, (start,), (n_output,))
 
+@jax.jit(static_argnums=(2, 3))
 def jax_forward_brpop(gen: JAXGenome, obs: jnp.ndarray, n_output:int, n_nodes_max:int) -> jnp.ndarray:
     """Feed-forward a NEAT genome in JAX.
 

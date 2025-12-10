@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 import numpy as np
-
+import random
 
 class NodeType(Enum):
     INPUT = auto()
@@ -33,11 +33,22 @@ ACT_TYPE_MAP = {
     ActivationType.LINEAR: 4,
 }
 
+VALID_HIDDEN_ACTIVATIONS = [
+    ActivationType.TANH,
+    ActivationType.RELU,
+    ActivationType.SIGMOID,
+    ActivationType.LINEAR,
+]
+
+def get_random_activation() -> ActivationType:
+    """Randomly selects an activation function from the valid set."""
+    return random.choice(VALID_HIDDEN_ACTIVATIONS)
+
 @dataclass
 class NodeGene:
     id: int
     type: NodeType
-    activation: ActivationType = ActivationType.TANH  # default; ignored for INPUT/BIAS
+    activation: ActivationType = get_random_activation()#ActivationType.TANH  # default; ignored for INPUT/BIAS
 
 
 @dataclass

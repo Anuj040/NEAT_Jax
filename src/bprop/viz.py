@@ -12,6 +12,29 @@ from src.neat_core.neat import Individual
 from src.jax_neat.policy import jax_forward
 from src.neat_core.visualize import GenomeEvolutionRecorder, draw_genome
 
+@jax.jit(static_argnums=(3))
+def calculate_single_genome_accuracy(
+    params: dict,        # dict of arrays with shape (...) for a single genome
+    X: jnp.ndarray,      # (N, OBS_DIM) dataset inputs
+    Y: jnp.ndarray,       # (N,) dataset labels
+    n_output: int = 2
+) -> jnp.ndarray:
+    """Calculates the accuracy for a single genome on a given dataset."""
+    
+    # jax_forward(params, x_sample, n_output) -> (ACT_DIM,)
+    
+    jax_forward_vmap_obs = jax.vmap(jax_forward, in_axes=(None, 0, None)) 
+
+    # raw_outputs shape: (N, ACT_DIM)
+    raw_outputs = jax_forward_vmap_obs(params, X, n_output)
+
+    # predictions shape: (N,)
+    predictions: jnp.ndarray = jnp.argmax(raw_outputs, axis=1).astype(jnp.int32)
+
+    # 2. Calculate accuracy
+    correct_predictions = (predictions == Y)
+    return jnp.mean(correct_predictions.astype(jnp.float32))
+
 @jax.jit(static_argnums=(2))
 def generate_prediction_grid(params: dict, X_grid: jnp.ndarray, n_output: int) -> jnp.ndarray:
     """
@@ -30,12 +53,11 @@ def generate_prediction_grid(params: dict, X_grid: jnp.ndarray, n_output: int) -
     
     # Raw output shape: (GridSize, 1)
     raw_outputs = jax_forward_vmap_grid(params, X_grid, n_output)
+    probabilities = jax.nn.softmax(raw_outputs, axis=-1)
+    return probabilities[:, 1] - probabilities[:, 0]
 
-    # Apply threshold and squeeze to (GridSize,)
-    return jnp.argmax(raw_outputs, axis=-1).astype(jnp.int32)
 
-
-def visualize_decision_boundary(genome: Genome, fitness:float, X_data: jnp.ndarray, Y_data: jnp.ndarray, n_input: int, n_output: int) -> Image.Image:
+def visualize_decision_boundary(genome: Genome, X_data: jnp.ndarray, Y_data: jnp.ndarray, n_input: int, n_output: int) -> Image.Image:
     """
     Plots the dataset and the decision boundary for the given genome.
     Returns a PIL Image object.
@@ -52,6 +74,8 @@ def visualize_decision_boundary(genome: Genome, fitness:float, X_data: jnp.ndarr
     # 2. Get JAX Parameters and Predictions
     params = genome_to_jax(genome, obs_dim=n_input, act_dim=n_output) # Use n_output here too
     Z = generate_prediction_grid(params, X_grid, n_output)
+    accuracy = calculate_single_genome_accuracy(params, X_data, Y_data, n_output)
+    fitness = float(accuracy)
     
     # Put result back into a grid structure for plotting
     Z = Z.reshape(xx.shape)
@@ -59,9 +83,8 @@ def visualize_decision_boundary(genome: Genome, fitness:float, X_data: jnp.ndarr
     # 3. Plotting with Matplotlib
     fig, ax = plt.subplots(figsize=(5, 5))
     
-    # Plot decision boundaries (shaded area)
+    # # Plot decision boundaries (shaded area)
     ax.contourf(xx, yy, Z, cmap=plt.cm.RdBu, alpha=0.8)
-    
     # Plot training data points (scatter)
     # Convert JAX arrays to NumPy for plotting
     ax.scatter(np.array(X_data[:, 0]), np.array(X_data[:, 1]), 
@@ -111,7 +134,7 @@ class BpropGenomeEvolutionRecorder(GenomeEvolutionRecorder):
             genome = best.genome
             fitness = best.fitness
             network_img = self.save_network_structure(genome, fitness, label=label)
-            boundary_img = visualize_decision_boundary(genome, fitness, X_data, Y_data, n_input, n_output)
+            boundary_img = visualize_decision_boundary(genome, X_data, Y_data, n_input, n_output)
             new_height = 500
             
             # Resize both images to the target height
