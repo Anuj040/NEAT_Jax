@@ -30,6 +30,7 @@ class NeatHyperParams:
     p_add_conn: float = 0.05
     p_add_node: float = 0.03
     p_mutate_activation: float = 0.03
+    mutate_weights: bool = True
 
     # later: speciation params, compatibility coeffs, etc.
 
@@ -126,7 +127,9 @@ class Neat:
             # child_genome = copy.deepcopy(dominant.genome)
 
             # Always mutate weights
-            mutate_weights(child_genome, self.rng)
+            if self.hyp.mutate_weights:
+                # With Bprop updates we may choose to not mutate weights here
+                mutate_weights(child_genome, self.rng)
             # Sometimes add connection / node
             if self.rng.random() < hyp.p_add_conn:
                 mutate_add_connection(child_genome, self.innov, self.rng)

@@ -121,6 +121,82 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray, n_output:int) -> jnp.ndarray:
     start = gen.n_nodes - gen.n_output
     return jax.lax.dynamic_slice(values, (start,), (n_output,))
 
+def jax_forward_brpop(gen: JAXGenome, obs: jnp.ndarray, n_output:int, n_nodes_max:int) -> jnp.ndarray:
+    """Feed-forward a NEAT genome in JAX.
+
+    gen: JAXGenome
+    obs: shape (n_input,)
+    returns: shape (n_output,)
+    """
+    # Values for all nodes, initialize with zeros.
+    # Fill inputs, bias, then propagate hidden+output.
+    if isinstance(gen, dict):
+        from types import SimpleNamespace
+        gen = SimpleNamespace(**gen)
+    values = jnp.zeros_like(gen.node_type, dtype=jnp.float32)
+
+    # Set input node values.
+    # Assume inputs are nodes [0 .. n_input-1]
+    values = jax.lax.dynamic_update_slice(values, obs, start_indices=(0,))
+
+
+    # Set bias nodes (if any) to 1.0
+    # Let's say bias nodes are type == 4
+    bias_mask = (gen.node_type == NODE_TYPE_MAP[NodeType.BIAS])
+    values = jnp.where(bias_mask, 1.0, values)
+
+    # Topological eval:
+    # We loop node_id from 0..n_nodes-1, but **skip inputs and bias** as
+    # they are already set. For each node, we sum all enabled incoming
+    # connections.
+    def node_body(node_id, values):
+        # Skip inputs and bias
+        ntype = gen.node_type[node_id]
+        is_input_or_bias = jnp.logical_or(
+            ntype ==  NODE_TYPE_MAP[NodeType.INPUT],
+            ntype ==  NODE_TYPE_MAP[NodeType.BIAS],
+        )
+        def skip(values):
+            return values
+
+        def compute(values):
+            # All connections where out == node_id
+            # We consider only the first n_conns; others are garbage.
+            conn_mask = jnp.logical_and(
+                gen.conn_enabled,
+                gen.conn_out == node_id,
+            )
+            # Optionally: also mask by index < n_conns, if you want:
+            # idx = jnp.arange(gen.conn_out.shape[0])
+            # conn_mask = jnp.logical_and(conn_mask, idx < gen.n_conns)
+
+            # Gather inputs and weights
+            in_ids = gen.conn_in
+            w = gen.conn_weight
+
+            contrib = jnp.where(
+                conn_mask,
+                values[in_ids] * w,
+                0.0,
+            )
+            s = jnp.sum(contrib)
+
+            # activation
+            act_id = gen.node_activation[node_id]
+            activated_s = jax_activate(s, act_id)
+            values = values.at[node_id].set(activated_s)
+            return values
+
+        return jax.lax.cond(is_input_or_bias, skip, compute, values)
+
+    # Loop over nodes in order
+    values = jax.lax.fori_loop(0, n_nodes_max, node_body, values)
+
+    # Collect outputs.
+    # Assume outputs are the last n_output nodes: [n_nodes - n_output .. n_nodes)
+    start = gen.n_nodes - gen.n_output
+    return jax.lax.dynamic_slice(values, (start,), (n_output,))
+
 def jax_genome_flatten(jg):
     children = (
         jg.node_type, jg.node_activation, jg.conn_in, jg.conn_out, jg.conn_weight, jg.conn_enabled
