@@ -14,7 +14,7 @@ from src.neat_core.visualize import GenomeEvolutionRecorder
 from src.jax_neat.convert import genome_to_jax
 
 OBS_DIM = 12  # SlimeVolley state observation size (fixed)
-ACT_DIM = 3   # SlimeVolley action size (MultiBinary(3))
+ACT_DIM = 3  # SlimeVolley action size (MultiBinary(3))
 
 neat_policy_batched = jax.vmap(
     slime_policy_jax,
@@ -69,9 +69,9 @@ def rollout_batched(
         done = jnp.squeeze(done)      # (B,)
         # Only accumulate reward if not already done
         # (This allows env to keep stepping but we freeze returns per episode.)
-        # active = ~done_carry
-        # returns = returns + jnp.where(active, reward, 0)
-        returns = returns + reward
+        active = ~done_carry
+        returns = returns + jnp.where(active, reward, 0)
+        # returns = returns + reward
 
         # Once done, stay done
         done_carry = jnp.logical_or(done_carry, done)
@@ -167,7 +167,7 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
     hyparams = NeatHyperParams(
         pop_size=pop_size,
         elite_frac=0.1,
-        parent_frac=0.5,
+        parent_frac=0.3,
         p_add_conn=0.1,
         p_add_node=0.05,
         p_mutate_activation=0.03,
@@ -179,7 +179,7 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
         seed=42,
     )
     
-    log_dir = Path('./log/slimevolley_nodone')
+    log_dir = Path('./log/slimevolley')
     gif_path = log_dir / f"snapshots_gen_{generations}_ep_{episodes_per_genome}_pop_{pop_size}"
     rec = GenomeEvolutionRecorder(gif_path)
     for gen in range(generations):
@@ -192,7 +192,7 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
             f"Gen {gen:03d}  best_fit={best.fitness:.3f}  "
             f"nodes={len(best.genome.nodes)}  conns={len(best.genome.connections)}"
         )
-        if gen % 10 == 0 or gen == generations - 1:
+        if gen % 20 == 0 or gen == generations - 1:
             rec.save_genome_frame(best.genome, label=f"gen {gen}")
 
     # After training, test the best genome with rendering if SlimeVolley supports it.

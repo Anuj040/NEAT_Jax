@@ -8,16 +8,9 @@ import numpy as np
 
 from src.neat_core.genome import Genome, NodeType
 
-def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
+def draw_genome(genome: Genome, ax: plt.Axes = None) -> plt.Axes:
     """
-    Visualize a NEAT Genome.
-
-    - Circle nodes for INPUT / HIDDEN / OUTPUT
-    - Square nodes for BIAS
-    - Node color encodes NodeType
-    - Edge color encodes sign of weight (e.g. blue=positive, red=negative)
-    - Edge thickness encodes |weight|
-    - Activation label printed next to HIDDEN / OUTPUT nodes
+    Visualize a NEAT Genome, drawing ONLY nodes connected to at least one edge.
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 6))
@@ -37,8 +30,18 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
             enabled=c.enabled,
         )
 
-    # ---- Layout: place nodes by type in vertical columns ----
-    # You can tweak these x-coordinates if you prefer a different layout.
+    # --- Identify nodes that are part of any edge ---
+    connected_nodes = set()
+    for u, v in G.edges():
+        connected_nodes.add(u)
+        connected_nodes.add(v)
+        
+    # Filter genome.nodes to include only connected nodes for layout/drawing
+    connected_genome_nodes = {
+        nid: node for nid, node in genome.nodes.items() if nid in connected_nodes
+    }
+
+    # ---- Layout: place connected nodes by type in vertical columns ----
     type_to_x = {
         NodeType.INPUT: 0.0,
         NodeType.BIAS: 0.5,
@@ -46,24 +49,26 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
         NodeType.OUTPUT: 2.5,
     }
 
-    # Group nodes by type
-    groups: dict[NodeType, list[int]] = {t: [] for t in NodeType}
-    for nid, node in genome.nodes.items():
+    # Group *connected* nodes by type
+    # FIX: Use NodeType objects (keys of type_to_x) for groups initialization
+    groups: dict[Any, List[int]] = {t: [] for t in type_to_x.keys()}
+    for nid, node in connected_genome_nodes.items():
         groups[node.type].append(nid)
 
     # Assign positions
-    pos: dict[int, tuple[float, float]] = {}
+    pos: Dict[int, Tuple[float, float]] = {}
     for ntype, ids in groups.items():
         if not ids:
             continue
         ids = sorted(ids)
         # Spread them vertically
-        ys = np.linspace(0.0, 1.0, len(ids) + 2)[1:-1]
+        # Note: np.linspace is fine, but need to ensure it's imported
+        ys = np.linspace(0.0, 1.0, len(ids) + 2)[1:-1] 
         x = type_to_x[ntype]
         for nid, y in zip(ids, ys):
             pos[nid] = (x, y)
 
-    # ---- Draw nodes (by type so we can change shapes) ----
+    # ---- Draw connected nodes (by type so we can change shapes) ----
     node_colors = {
         NodeType.INPUT: "#8dd3c7",   # mint-ish
         NodeType.HIDDEN: "#ffffb3",  # pale yellow
@@ -78,9 +83,13 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
         (NodeType.OUTPUT, "o"),
         (NodeType.BIAS, "s"),
     ]:
-        nodelist = [nid for nid, node in genome.nodes.items() if node.type == ntype]
+        # Filter nodelist to only include connected nodes of the current type
+        nodelist = [
+            nid for nid, node in connected_genome_nodes.items() if node.type == ntype
+        ]
         if not nodelist:
             continue
+        # Note: nx.draw_networkx_nodes is fine, but need to ensure nx is imported
         nx.draw_networkx_nodes(
             G,
             pos,
@@ -92,8 +101,8 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
             ax=ax,
         )
 
-    # Node labels: just the node ID
-    labels = {nid: str(nid) for nid in genome.nodes.keys()}
+    # Node labels: just the node ID (only for connected nodes)
+    labels = {nid: str(nid) for nid in connected_genome_nodes.keys()}
     nx.draw_networkx_labels(
         G,
         pos,
@@ -102,11 +111,12 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
         ax=ax,
     )
 
-    # Activation labels near hidden & output nodes
-    for nid, node in genome.nodes.items():
+    # Activation labels near hidden & output nodes (only for connected nodes)
+    for nid, node in connected_genome_nodes.items():
         if node.type in (NodeType.HIDDEN, NodeType.OUTPUT):
             x, y = pos[nid]
-            act_label = node.activation.value
+            # Assuming activation is an attribute on the node, not node.activation.value
+            act_label = getattr(node.activation, 'value', node.activation) 
             ax.text(
                 x + 0.08,
                 y + 0.03,
@@ -116,7 +126,7 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
                 va="center",
             )
 
-    # ---- Draw edges, encoding sign + magnitude ----
+    # ---- Draw edges, encoding sign + magnitude (no change needed here) ----
     enabled_edges = []
     disabled_edges = []
     for u, v, data in G.edges(data=True):
@@ -167,10 +177,9 @@ def draw_genome(genome: Genome, ax: plt.Axes | None = None) -> plt.Axes:
         )
 
     ax.set_axis_off()
-    ax.set_title("NEAT Genome", fontsize=12)
+    ax.set_title("NEAT Genome (Connected Nodes Only)", fontsize=12)
     plt.tight_layout()
     return ax
-
 
 class GenomeEvolutionRecorder:
     """

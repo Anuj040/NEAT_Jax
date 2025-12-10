@@ -19,6 +19,7 @@ class JAXGenome:
     n_output: int
     n_nodes: int
     n_conns: int
+    output_indices: jnp.ndarray
 
 
 # This function would be placed in your JAX policy file
@@ -117,9 +118,7 @@ def jax_forward(gen: JAXGenome, obs: jnp.ndarray, n_output:int) -> jnp.ndarray:
     values = jax.lax.fori_loop(0, gen.n_nodes, node_body, values)
 
     # Collect outputs.
-    # Assume outputs are the last n_output nodes: [n_nodes - n_output .. n_nodes)
-    start = gen.n_nodes - gen.n_output
-    return jax.lax.dynamic_slice(values, (start,), (n_output,))
+    return values[gen.output_indices]
 
 @jax.jit(static_argnums=(2, 3))
 def jax_forward_brpop(gen: JAXGenome, obs: jnp.ndarray, n_output:int, n_nodes_max:int) -> jnp.ndarray:
@@ -194,13 +193,11 @@ def jax_forward_brpop(gen: JAXGenome, obs: jnp.ndarray, n_output:int, n_nodes_ma
     values = jax.lax.fori_loop(0, n_nodes_max, node_body, values)
 
     # Collect outputs.
-    # Assume outputs are the last n_output nodes: [n_nodes - n_output .. n_nodes)
-    start = gen.n_nodes - gen.n_output
-    return jax.lax.dynamic_slice(values, (start,), (n_output,))
+    return values[gen.output_indices]
 
 def jax_genome_flatten(jg):
     children = (
-        jg.node_type, jg.node_activation, jg.conn_in, jg.conn_out, jg.conn_weight, jg.conn_enabled
+        jg.node_type, jg.node_activation, jg.conn_in, jg.conn_out, jg.conn_weight, jg.conn_enabled, jg.output_indices
     )
     aux = {
         "n_input": jg.n_input,
@@ -218,6 +215,7 @@ def jax_genome_unflatten(aux, children) -> JAXGenome:
         conn_out=children[3],
         conn_weight=children[4],
         conn_enabled=children[5],
+        output_indices=children[6],
         n_input=aux["n_input"],
         n_output=aux["n_output"],
         n_nodes=aux["n_nodes"],

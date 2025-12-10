@@ -213,6 +213,7 @@ def crossover_genomes(dominant: Genome, submissive: Genome, rng: np.random.Gener
         elif conn_submissive:
             # Disjoint/Excess Gene in Submissive Parent: Never inherited
             pass
+            # chosen_conn = conn_submissive
             
         if chosen_conn:
             # Create a deep copy of the gene for the child

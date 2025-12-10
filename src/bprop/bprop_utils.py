@@ -4,7 +4,7 @@ import optax
 
 from src.jax_neat.policy import jax_forward_brpop
 
-def classification_loss(raw_outputs: jnp.ndarray, Y: jnp.ndarray) -> jnp.ndarray:
+def classification_loss(raw_outputs: jnp.ndarray, Y: jnp.ndarray, conn_weight: jnp.ndarray) -> jnp.ndarray:
     """
     Calculates the sparse softmax cross-entropy loss.
 
@@ -23,6 +23,8 @@ def classification_loss(raw_outputs: jnp.ndarray, Y: jnp.ndarray) -> jnp.ndarray
     #     )
     # )
     loss = optax.softmax_cross_entropy_with_integer_labels(raw_outputs, Y).mean()
+    # l2_penalty = jnp.sum(conn_weight ** 2) * 1e-4
+    # loss += l2_penalty
     return loss
 
 def compute_loss_for_genome(conn_weight: jnp.ndarray, conn_enabled: jnp.ndarray, X: jnp.ndarray, Y: jnp.ndarray, 
@@ -36,7 +38,7 @@ def compute_loss_for_genome(conn_weight: jnp.ndarray, conn_enabled: jnp.ndarray,
                        "conn_enabled": conn_enabled}
     jax_forward_vmap_obs = jax.vmap(jax_forward_brpop, in_axes=(None, 0, None, None))
     raw_outputs = jax_forward_vmap_obs(temp_gen_params, X, n_output, max_nodes) 
-    return classification_loss(raw_outputs, Y)
+    return classification_loss(raw_outputs, Y, conn_weight)
 
 # Use jax.grad to compute gradients ONLY w.r.t. the first argument (conn_weight)
 grad_fn = jax.grad(compute_loss_for_genome, argnums=0)
@@ -48,3 +50,32 @@ def sgd_update(current_weights, gradients, learning_rate: float) -> jnp.ndarray:
     # Note: jax_forward already gates connections by conn_enabled, but updating
     # disabled weights is harmless.
     return current_weights - learning_rate * gradients
+
+# Hyperparameters (Tune these in your main script)
+BETA1 = 0.9      # Decay rate for the first moment estimate
+BETA2 = 0.999    # Decay rate for the second moment estimate
+EPS = 1e-8       # Small value to prevent division by zero
+
+@jax.jit
+def adam_update(
+    current_weights: jnp.ndarray,
+    gradients: jnp.ndarray,
+    m: jnp.ndarray,
+    v: jnp.ndarray,
+    step: int,
+    lr: float,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    
+    # 1. Update biased moments
+    m_new = BETA1 * m + (1.0 - BETA1) * gradients
+    v_new = BETA2 * v + (1.0 - BETA2) * (gradients ** 2)
+
+    # 2. Bias correction (compensates for initialization near zero)
+    step_float = step + 1 # step starts at 0, so correction factor is step + 1
+    m_hat = m_new / (1.0 - BETA1**step_float)
+    v_hat = v_new / (1.0 - BETA2**step_float)
+    
+    # 3. Update weights
+    updated_weights = current_weights - lr * m_hat / (jnp.sqrt(v_hat) + EPS)
+    
+    return updated_weights, m_new, v_new

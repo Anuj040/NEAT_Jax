@@ -12,6 +12,14 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
     # Sort node IDs so we have a consistent order.
     node_ids = sorted(gen.nodes.keys())
     n_nodes = len(node_ids)
+    output_indices_py = [
+        idx
+        for idx, nid in enumerate(node_ids)
+        if gen.nodes[nid].type == NodeType.OUTPUT
+    ]
+    n_output = len(output_indices_py)
+    assert n_output == act_dim, f"Expected {act_dim} outputs, got {n_output}"
+    output_indices_arr = np.array(output_indices_py, dtype=np.int32)
 
     if n_nodes > MODEL_CONFIG.MAX_NODES:
         raise ValueError(f"Too many nodes ({n_nodes}) for MAX_NODES={MODEL_CONFIG.MAX_NODES}")
@@ -28,7 +36,7 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
         if gen.nodes[nid].type in (NodeType.HIDDEN, NodeType.OUTPUT):
             # Only HIDDEN and OUTPUT nodes need an activation
             node_activation_arr[idx] = ACT_TYPE_MAP[gen.nodes[nid].activation]
-
+    # exit(print(node_type_arr))
     # Count inputs and outputs from types
     input_mask = (node_type_arr[:n_nodes] == NODE_TYPE_MAP[NodeType.INPUT])
     output_mask = (node_type_arr[:n_nodes] == NODE_TYPE_MAP[NodeType.OUTPUT])
@@ -69,6 +77,7 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
         n_output=n_output,
         n_nodes=n_nodes,
         n_conns=n_conns,
+        output_indices=jnp.array(output_indices_arr),
     )
 
 def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[str, jnp.ndarray]:
@@ -90,6 +99,7 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
     n_output    = np.zeros((P,), dtype=np.int32)
     n_nodes     = np.zeros((P,), dtype=np.int32)
     n_conns     = np.zeros((P,), dtype=np.int32)
+    output_indices = np.zeros((P, act_dim), dtype=np.int32)
 
     for i, g in enumerate(genomes):
         # ----- nodes -----
@@ -100,15 +110,21 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
             raise ValueError(f"Genome {i}: n_nodes {nn} > MAX_NODES {max_nodes}")
         n_nodes[i] = nn
 
+        output_indices_py = [
+            idx
+            for idx, nid in enumerate(node_ids)
+            if g.nodes[nid].type == NodeType.OUTPUT
+        ]
+        num_output = len(output_indices_py)
+        assert num_output == act_dim, f"Expected {act_dim} outputs, got {num_output}"
+        output_indices[i] = np.array(output_indices_py, dtype=np.int32)
+
         # fill node_type row
         for nid, jidx in id_to_idx.items():
             try:
-                nd_type = g.nodes[nid].type
-                node_type[i, jidx] = NODE_TYPE_MAP[nd_type]
-                if nd_type in (NodeType.HIDDEN, NodeType.OUTPUT):
-                    node_activation[i, jidx] = ACT_TYPE_MAP[g.nodes[nid].activation]
+                node_type[i, jidx] = NODE_TYPE_MAP[g.nodes[nid].type]
             except KeyError:
-                raise KeyError(f"Unknown node type: {nd_type}")
+                raise KeyError(f"Unknown node type: {g.nodes[nid].type}")
 
         # count inputs/outputs
         n_input[i]  = sum(1 for nid in node_ids if g.nodes[nid].type == NodeType.INPUT)
@@ -142,5 +158,6 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
         "n_output":    jnp.array(n_output),
         "n_nodes":     jnp.array(n_nodes),
         "n_conns":     jnp.array(n_conns),
+        "output_indices": jnp.array(output_indices),
     }
     return params_batch
