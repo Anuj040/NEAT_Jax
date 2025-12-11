@@ -15,5 +15,5 @@ setup-project:
 	uv python pin 3.13
 	uv sync
 	uv pip install git+https://github.com/google/evojax.git@main
-	pip install jax[cuda12] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+	uv pip install jax[cuda12] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 	@echo "Project setup completed."

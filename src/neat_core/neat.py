@@ -31,6 +31,8 @@ class NeatHyperParams:
     p_add_node: float = 0.03
     p_mutate_activation: float = 0.03
     mutate_weights: bool = True
+    MAX_NODES = 64       # total (inputs + bias + hidden + outputs)
+    MAX_CONNS = 256
 
     # later: speciation params, compatibility coeffs, etc.
 
@@ -57,7 +59,7 @@ class Neat:
     def _init_population(self) -> list[Individual]:
         pop: list[Individual] = []
         for _ in range(self.hyp.pop_size):
-            g = make_minimal_genome(self.obs_dim, self.act_dim)
+            g = make_minimal_genome(self.obs_dim, self.act_dim, self.hyp)
             mutate_weights(g, self.rng, prob_perturb=1.0, sigma=0.1, reset_scale=0.5)
             pop.append(Individual(genome=g, fitness=0.0))
         return pop
@@ -134,7 +136,7 @@ class Neat:
             if self.rng.random() < hyp.p_add_conn:
                 mutate_add_connection(child_genome, self.innov, self.rng)
             if self.rng.random() < hyp.p_add_node:
-                mutate_add_node(child_genome, self.innov, self.rng)
+                mutate_add_node(child_genome, self.innov, self.rng, self.hyp)
             if self.rng.random() < hyp.p_mutate_activation:
                 mutate_activation(child_genome, self.rng, prob_mutate=0.5)
 

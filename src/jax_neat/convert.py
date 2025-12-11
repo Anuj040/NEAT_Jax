@@ -90,7 +90,7 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
     P = len(genomes)
 
     node_type   = np.zeros((P, max_nodes), dtype=np.int32)
-    node_activation = np.ones((P, max_nodes), dtype=np.int32)
+    node_activation = np.ones((P, max_nodes), dtype=np.int32) * 4  # Default to Linear
     conn_in     = np.zeros((P, max_conns), dtype=np.int32)
     conn_out    = np.zeros((P, max_conns), dtype=np.int32)
     conn_weight = np.zeros((P, max_conns), dtype=np.float32)
@@ -121,10 +121,15 @@ def genomes_to_params_batch(genomes: list, obs_dim: int, act_dim: int) -> dict[s
 
         # fill node_type row
         for nid, jidx in id_to_idx.items():
+            node = g.nodes[nid]
             try:
-                node_type[i, jidx] = NODE_TYPE_MAP[g.nodes[nid].type]
+                node_type[i, jidx] = NODE_TYPE_MAP[node.type]
             except KeyError:
-                raise KeyError(f"Unknown node type: {g.nodes[nid].type}")
+                raise KeyError(f"Unknown node type: {node.type}")
+            if node.type in (NodeType.HIDDEN, NodeType.OUTPUT):
+                node_activation[i, jidx] = ACT_TYPE_MAP[node.activation]
+            else:
+                node_activation[i, jidx] = 4  # Linear (identity) for safety
 
         # count inputs/outputs
         n_input[i]  = sum(1 for nid in node_ids if g.nodes[nid].type == NodeType.INPUT)

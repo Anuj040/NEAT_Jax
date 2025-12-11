@@ -65,7 +65,6 @@ def mutate_add_connection(
         # Enforce direction and type constraints
         if in_id >= out_id:
             continue
-
         in_node = genome.nodes[in_id]
         out_node = genome.nodes[out_id]
 
@@ -100,6 +99,7 @@ def mutate_add_node(
     genome: Genome,
     innov: InnovationTracker,
     rng: np.random.Generator,
+    hyp, 
 ) -> bool:
     """Add a new node by splitting an existing enabled connection.
 
@@ -112,10 +112,28 @@ def mutate_add_node(
     # Pick a random connection to split
     conn = rng.choice(enabled_conns)
     conn.enabled = False  # disable old connection
-
-    # New node id = max existing id + 1
-    new_id = max(genome.nodes.keys()) + 1
-
+    input_ids = [nid for nid, n in genome.nodes.items() if n.type == NodeType.INPUT]
+    n_input = len(input_ids)
+    bias_id = None
+    for nid, n in genome.nodes.items():
+        if n.type == NodeType.BIAS:
+            bias_id = nid
+            break
+    if bias_id is None:
+        return False
+    output_ids = [nid for nid, n in genome.nodes.items() if n.type == NodeType.OUTPUT]
+    first_output_id = min(output_ids)  # should equal MAX_NODES - act_dim
+    min_hidden_id = bias_id + 1
+    max_hidden_id = first_output_id - 1
+    used_ids = set(genome.nodes.keys())
+    new_id = None
+    for nid in range(min_hidden_id, max_hidden_id + 1):
+        if nid not in used_ids:
+            new_id = nid
+            break
+    if new_id is None:
+        # No free IDs in hidden region
+        return False
     genome.nodes[new_id] = NodeGene(id=new_id, type=NodeType.HIDDEN)
 
     # Two new connections:
@@ -162,7 +180,6 @@ def mutate_activation(genome: Genome, rng: np.random.Generator, prob_mutate: flo
                 if act != node.activation
                 and act != ActivationType.NULL
             ]
-            
             if not available_choices:
                 continue 
 

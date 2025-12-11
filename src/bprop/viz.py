@@ -29,9 +29,9 @@ def calculate_single_genome_accuracy(
     raw_outputs = jax_forward_vmap_obs(params, X, n_output)
 
     # predictions shape: (N,)
-    predictions: jnp.ndarray = jnp.argmax(raw_outputs, axis=1).astype(jnp.int32)
-
-    # 2. Calculate accuracy
+    # predictions: jnp.ndarray = jnp.argmax(raw_outputs, axis=1).astype(jnp.int32)
+    probabilities_P1 = jnp.squeeze(raw_outputs, axis=-1)
+    predictions = (probabilities_P1 > 0.5).astype(jnp.int32)
     correct_predictions = (predictions == Y)
     return jnp.mean(correct_predictions.astype(jnp.float32))
 
@@ -52,10 +52,12 @@ def generate_prediction_grid(params: dict, X_grid: jnp.ndarray, n_output: int) -
     jax_forward_vmap_grid = jax.vmap(jax_forward, in_axes=(None, 0, None))
     
     # Raw output shape: (GridSize, 1)
-    raw_outputs = jax_forward_vmap_grid(params, X_grid, n_output)
-    probabilities = jax.nn.softmax(raw_outputs, axis=-1)
-    return probabilities[:, 1] - probabilities[:, 0]
-
+    # raw_outputs = jax_forward_vmap_grid(params, X_grid, n_output)
+    # probabilities = jax.nn.softmax(raw_outputs, axis=-1)
+    # return probabilities[:, 1] - probabilities[:, 0]
+    
+    probabilities_P1 = jax_forward_vmap_grid(params, X_grid, n_output)
+    return jnp.squeeze(probabilities_P1, axis=-1) - 0.5    
 
 def visualize_decision_boundary(genome: Genome, X_data: jnp.ndarray, Y_data: jnp.ndarray, n_input: int, n_output: int) -> Image.Image:
     """

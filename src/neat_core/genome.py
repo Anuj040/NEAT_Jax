@@ -33,22 +33,11 @@ ACT_TYPE_MAP = {
     ActivationType.LINEAR: 4,
 }
 
-VALID_HIDDEN_ACTIVATIONS = [
-    ActivationType.TANH,
-    ActivationType.RELU,
-    ActivationType.SIGMOID,
-    ActivationType.LINEAR,
-]
-
-def get_random_activation() -> ActivationType:
-    """Randomly selects an activation function from the valid set."""
-    return random.choice(VALID_HIDDEN_ACTIVATIONS)
-
 @dataclass
 class NodeGene:
     id: int
     type: NodeType
-    activation: ActivationType = get_random_activation()#ActivationType.TANH  # default; ignored for INPUT/BIAS
+    activation: ActivationType = ActivationType.SIGMOID  # default; ignored for INPUT/BIAS
 
 
 @dataclass
@@ -140,7 +129,7 @@ class Genome:
         else:
             return float(z)
 
-def make_minimal_genome(obs_dim: int, act_dim: int) -> Genome:
+def make_minimal_genome(obs_dim: int, act_dim: int, hyps) -> Genome:
     """Create a minimal NEAT genome: inputs + bias fully connected to outputs.
 
     No hidden nodes. This matches classic NEAT's 'start simple' strategy.
@@ -161,11 +150,10 @@ def make_minimal_genome(obs_dim: int, act_dim: int) -> Genome:
     nodes[bias_id] = NodeGene(id=bias_id, type=NodeType.BIAS)
 
     # Outputs
-    output_ids: list[int] = []
-    for _ in range(act_dim):
-        node_id += 1
-        nodes[node_id] = NodeGene(id=node_id, type=NodeType.OUTPUT)
-        output_ids.append(node_id)
+    output_base = hyps.MAX_NODES - act_dim
+    output_ids = list(range(output_base, hyps.MAX_NODES))
+    for out_id in output_ids:
+        nodes[out_id] = NodeGene(id=out_id, type=NodeType.OUTPUT)
 
     # Fully connect (inputs + bias) → outputs with random weights.
     connections: list[ConnectionGene] = []

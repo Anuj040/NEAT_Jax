@@ -163,7 +163,7 @@ def evaluate_population_evojax(
     )
     return np.array(fitnesses_jax, dtype=np.float32)
 
-def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop_size: int = 20):
+def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop_size: int = 20) -> None:
     hyparams = NeatHyperParams(
         pop_size=pop_size,
         elite_frac=0.1,
@@ -188,11 +188,11 @@ def train_neat_on_slime(generations: int = 20, episodes_per_genome: int = 3, pop
         neat.tell(fitnesses)
 
         best = neat.get_best()
-        print(
-            f"Gen {gen:03d}  best_fit={best.fitness:.3f}  "
-            f"nodes={len(best.genome.nodes)}  conns={len(best.genome.connections)}"
-        )
         if gen % 20 == 0 or gen == generations - 1:
+            print(
+                f"Gen {gen:03d}  best_fit={best.fitness:.3f}  "
+                f"nodes={len(best.genome.nodes)}  conns={len(best.genome.connections)}"
+            )
             rec.save_genome_frame(best.genome, label=f"gen {gen}")
 
     # After training, test the best genome with rendering if SlimeVolley supports it.
@@ -272,9 +272,6 @@ def eval_with_render_evojax(genome:Genome, episodes: int = 1, max_steps:int = 10
         total_return += ep_return
         
         print(f"Episode {ep_num} return: {ep_return}")
-
-        # 4. Rendering (I/O, MUST be in Python)
-        # We need to extract the single-task state from all scanned states for rendering
         for t in range(max_steps):
             # Extract the single state tree for step t
             single_task_state_t = jax.tree_util.tree_map(lambda x: x[t, 0], scanned_states)

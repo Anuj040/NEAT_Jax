@@ -43,9 +43,7 @@ def jax_activate(z, act_id):
     # and we use 0 as a placeholder, we can use the ID directly as the index.
     return lax.switch(act_id, activation_funcs, z)
 
-# In your JAX forward pass loop:
-# current_activation_id = jax_genome.node_activation[node_idx]
-# values[node_idx] = jax_activate(sum_of_weights, current_activation_id)
+@jax.jit(static_argnums=(2))
 def jax_forward(gen: JAXGenome, obs: jnp.ndarray, n_output:int) -> jnp.ndarray:
     """Feed-forward a NEAT genome in JAX.
 
