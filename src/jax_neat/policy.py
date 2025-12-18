@@ -26,21 +26,19 @@ class JAXGenome:
 
 def jax_activate(z, act_id):
     """JAX-compatible activation dispatcher using lax.switch."""
-    
-    # Define a list of activation functions (must be the same order as ACT_TYPE_MAP)
     def identity(x): return x
-    
-    # Note: Tanh ID 1, ReLU ID 2, Sigmoid ID 3, Linear ID 4 (as per ACT_TYPE_MAP)
     activation_funcs = [
-        lambda x: x,                      # ID 0 (unused/placeholder)
-        jnp.tanh,                         # ID 1: TANH
-        lambda x: jnp.maximum(0.0, x),    # ID 2: RELU
-        lambda x: 1.0 / (1.0 + jnp.exp(-x)), # ID 3: SIGMOID
-        identity                          # ID 4: LINEAR
+        identity,                        # 0: NULL
+        jnp.tanh,                       # 1: TANH
+        lambda x: jnp.maximum(0.0, x),  # 2: RELU
+        lambda x: 1.0 / (1.0 + jnp.exp(-x)), # 3: SIGMOID
+        identity,                       # 4: LINEAR
+        lambda x: jnp.exp(-x * x),      # 5: GAUSSIAN
+        jnp.abs,                        # 6: ABS
+        lambda x: x * x,                # 7: SQUARE
+        jnp.sin,                        # 8: SIN
+        jnp.cos,                        # 9: COS
     ]
-
-    # lax.switch requires a 0-indexed integer. Since our IDs start at 1,
-    # and we use 0 as a placeholder, we can use the ID directly as the index.
     return lax.switch(act_id, activation_funcs, z)
 
 @jax.jit(static_argnums=(2))

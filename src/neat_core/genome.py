@@ -24,6 +24,11 @@ class ActivationType(str, Enum):
     RELU = "relu"
     SIGMOID = "sigmoid"
     LINEAR = "linear"   # identity
+    GAUSSIAN = "gaussian"
+    ABS = "abs"
+    SQUARE = "square"
+    SIN = "sin"
+    COS = "cos"
 
 ACT_TYPE_MAP = {
     ActivationType.NULL: 0,
@@ -31,6 +36,11 @@ ACT_TYPE_MAP = {
     ActivationType.RELU: 2,
     ActivationType.SIGMOID: 3,
     ActivationType.LINEAR: 4,
+    ActivationType.GAUSSIAN: 5,
+    ActivationType.ABS: 6,
+    ActivationType.SQUARE: 7,
+    ActivationType.SIN: 8,
+    ActivationType.COS: 9,
 }
 
 @dataclass
@@ -126,6 +136,16 @@ class Genome:
             return float(1.0 / (1.0 + np.exp(-z)))
         elif act == ActivationType.LINEAR:
             return float(z)
+        elif act == ActivationType.SIN:
+            return float(np.sin(z))
+        elif act == ActivationType.COS:
+            return float(np.cos(z))
+        elif act == ActivationType.GAUSSIAN:
+            return float(np.exp(-z * z))
+        elif act == ActivationType.ABS:
+            return float(abs(z))
+        elif act == ActivationType.SQUARE:
+            return float(z * z)
         else:
             return float(z)
 
