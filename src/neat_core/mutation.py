@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 from copy import deepcopy
 from typing import Optional
@@ -10,13 +10,21 @@ from src.neat_core.genome import Genome, NodeType, ConnectionGene, NodeGene, Act
 
 @dataclass
 class InnovationTracker:
-    """Global innovation counter shared across the whole population."""
-    current: int = 0
+    current_innov: int = 0
+    # Stores (in_id, out_id) -> innovation_number
+    connection_history: dict[tuple[int, int], int] = field(default_factory=dict)
+    
+    def get_innovation_id(self, in_id: int, out_id: int) -> int:
+        key = (in_id, out_id)
+        if key not in self.connection_history:
+            self.current_innov += 1
+            self.connection_history[key] = self.current_innov
+        return self.connection_history[key]
 
-    def next(self) -> int:
-        self.current += 1
-        return self.current
-
+    def next_innov(self) -> int:
+        """Fallback for node mutations which always get unique IDs."""
+        self.current_innov += 1
+        return self.current_innov
 
 def mutate_weights(
     genome: Genome,
@@ -56,37 +64,24 @@ def mutate_add_connection(
     Returns True if a connection was added, False otherwise.
     We enforce DAG-ness by only allowing in_id < out_id.
     """
-    node_ids = sorted(genome.nodes.keys())
+    possible_ins = [nid for nid, n in genome.nodes.items() if n.type in (NodeType.INPUT, NodeType.HIDDEN, NodeType.BIAS)]
+    possible_outs = [nid for nid, n in genome.nodes.items() if n.type in (NodeType.HIDDEN, NodeType.OUTPUT)]
 
     for _ in range(max_tries):
-        in_id = int(rng.choice(node_ids))
-        out_id = int(rng.choice(node_ids))
+        in_id = rng.choice(possible_ins)
+        out_id = rng.choice(possible_outs)
 
-        # Enforce direction and type constraints
-        if in_id >= out_id:
-            continue
-        in_node = genome.nodes[in_id]
-        out_node = genome.nodes[out_id]
-
-        # Valid sources: INPUT, HIDDEN, BIAS
-        if in_node.type not in (NodeType.INPUT, NodeType.HIDDEN, NodeType.BIAS):
-            continue
-
-        # Valid targets: HIDDEN, OUTPUT
-        if out_node.type not in (NodeType.HIDDEN, NodeType.OUTPUT):
-            continue
-
-        # No duplicate connection
-        if _connection_exists(genome, in_id, out_id):
+        if in_id >= out_id or _connection_exists(genome, in_id, out_id):
             continue
 
         # Success: create new connection
+        new_innov_id = innov.get_innovation_id(in_id, out_id)
         new_conn = ConnectionGene(
             in_id=in_id,
             out_id=out_id,
             weight=float(rng.normal(0.0, weight_scale)),
             enabled=True,
-            innovation=innov.next(),
+            innovation=new_innov_id,
         )
         genome.connections.append(new_conn)
         return True
@@ -127,7 +122,8 @@ def mutate_add_node(
     max_hidden_id = first_output_id - 1
     used_ids = set(genome.nodes.keys())
     new_id = None
-    for nid in range(min_hidden_id, max_hidden_id + 1):
+
+    for nid in range(max_hidden_id, min_hidden_id - 1, -1):
         if nid not in used_ids:
             new_id = nid
             break
@@ -144,14 +140,14 @@ def mutate_add_node(
         out_id=new_id,
         weight=1.0,
         enabled=True,
-        innovation=innov.next(),
+        innovation=innov.get_innovation_id(conn.in_id, new_id), #
     )
     new_to_out = ConnectionGene(
         in_id=new_id,
         out_id=conn.out_id,
         weight=conn.weight,  # preserve old behavior initially
         enabled=True,
-        innovation=innov.next(),
+        innovation=innov.get_innovation_id(new_id, conn.out_id ), #
     )
     genome.connections.append(in_to_new)
     genome.connections.append(new_to_out)
@@ -230,7 +226,6 @@ def crossover_genomes(dominant: Genome, submissive: Genome, rng: np.random.Gener
         elif conn_submissive:
             # Disjoint/Excess Gene in Submissive Parent: Never inherited
             pass
-            # chosen_conn = conn_submissive
             
         if chosen_conn:
             # Create a deep copy of the gene for the child

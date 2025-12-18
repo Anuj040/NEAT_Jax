@@ -26,7 +26,7 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
 
     # Build node_type array
     node_type_arr = np.zeros((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
-    node_activation_arr = np.ones((MODEL_CONFIG.MAX_NODES,), dtype=np.int32)
+    node_activation_arr = np.ones((MODEL_CONFIG.MAX_NODES,), dtype=np.int32) * 4
     id_to_idx = {}  # map old node id -> new index [0..n_nodes-1]
 
     for idx, nid in enumerate(node_ids):
@@ -36,6 +36,8 @@ def genome_to_jax(gen: Genome, obs_dim: int, act_dim: int) -> JAXGenome:
         if gen.nodes[nid].type in (NodeType.HIDDEN, NodeType.OUTPUT):
             # Only HIDDEN and OUTPUT nodes need an activation
             node_activation_arr[idx] = ACT_TYPE_MAP[gen.nodes[nid].activation]
+        else:
+            node_activation_arr[idx] = 4  # Linear (identity) for safety
     # exit(print(node_type_arr))
     # Count inputs and outputs from types
     input_mask = (node_type_arr[:n_nodes] == NODE_TYPE_MAP[NodeType.INPUT])
